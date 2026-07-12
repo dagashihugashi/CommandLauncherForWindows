@@ -22,6 +22,15 @@ function App() {
     // 1. Load config.json & Start menu
     const fetchConfig = async () => {
       try {
+        // Load currently opened windows
+        let openWindows: AppItem[] = [];
+        try {
+          openWindows = await invoke("get_open_windows");
+        } catch (e) {
+          console.warn("Window scan failed", e);
+        }
+
+        // Load from JSON
         let customApps: AppItem[] = [];
         try {
           const jsonString: string = await invoke("load_config");
@@ -33,6 +42,7 @@ function App() {
           console.error("Config load failed or missing:", e);
         }
 
+        // Load from START MENU
         let scannedApps: AppItem[] = [];
         try {
           scannedApps = await invoke("scan_apps");
@@ -41,7 +51,7 @@ function App() {
         }
 
         // Merge
-        setAppList([...customApps, ...scannedApps]);
+        setAppList([...openWindows, ...customApps, ...scannedApps]);
       } catch (error) {
         console.error("Fetch error: ", error);
       }

@@ -3,12 +3,49 @@ use std::fs;
 use std::path::PathBuf;
 use std::env;
 use serde::Serialize;
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetWindowTextW, GetWindowTextLengthW, 
+    IsWindowVisible, SetForegroundWindow, ShowWindow,
+    SW_RESTORE, IsIconic
+};
 
 // Data structure
 #[derive(Serialize)]
 struct AppItem {
     name: String,
     target: String,
+}
+
+unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL{
+    // 見えないウィンドウ（バックグラウンドプロセスなど）を除外
+    if IsWindowVisible(hwnd).as_bool() {
+        let length = GetWindowTextLengthW(hwnd);
+        if length > 0 {
+            let mut buffer = vec![0u16; (length + 1) as usize];
+            GetWindowTextW(hwnd, &mut buffer);
+            let title = String::from_utf16_lossy(&buffer).trim_end_matches('\0').to_string();
+            
+            // 余計なシステムウィンドウを除外
+            if !title.is_empty() && title != "Program Manager" {
+                let windows = &mut *(lparam.0 as *mut Vec<AppItem>);
+                windows.push(AppItem {
+                    name: format!("🪟 {}", title), // 識別しやすいように窓アイコンをつける
+                    target: format!("HWND:{}", hwnd.0 as usize), // ハンドル（ID）を保存
+                });
+            }
+        }
+    }
+    true.into()
+}
+
+#[tauri::command]
+fn get_open_windows() -> Result<Vec<AppItem>, String> {
+    let mut windows: Vec<AppItem> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(Some(enum_window_proc), LPARAM(&mut windows as *mut _ as isize));
+    }
+    Ok(windows)
 }
 
 #[tauri::command]
@@ -65,10 +102,23 @@ fn load_config() -> Result<String, String> {
 #[tauri::command]
 fn open_target(target : &str) -> Result<String, String> {
     use std::process::Command;
+    if target.starts_with("HWND:"){
+     let hwnd_str = &target[5..];
+     if let Ok(hwnd_val) = hwnd_str.parse::<usize>() {
+        unsafe {
+            let hwnd = HWND(hwnd_val as isize);
+            if IsIconic(hwnd).as_bool() {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            SetForegroundWindow(hwnd);
+        }
+        return Ok(format!("Switched to window: {}", hwnd_str));
+     }   
+    }
 
     // Launch apps by "cmd /c start" in windows
     let output = Command::new("cmd")
-        .args(["/c", "start", "", target])
+        .args(["/c", "start", "/MAX", "", target])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -84,7 +134,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_target, load_config, scan_apps])
+        .invoke_handler(tauri::generate_handler![open_target, load_config, scan_apps, get_open_windows])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
