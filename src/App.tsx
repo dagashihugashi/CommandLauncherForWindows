@@ -1,20 +1,40 @@
 import React, { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
-// Dummy list to search 
-const DUMMY_APPS = ["VS Code", "Google Chrome", "Settings", "Terminal"];
+// Def data type of Apps
+interface AppItem {
+  name: string;
+  target: string;
+}
 
 function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
+  const [appList, setAppList] = useState([]);
 
   useEffect(() => {
     // Get window instance
     const appWindow = getCurrentWindow();
 
-    // 1. Set global shortcut "Alt + Space"
+    // 1. Load config.json
+    const fetchConfig = async () => {
+      try {
+        const jsonString: string = await invoke("load_config");
+        const data = JSON.parse(jsonString);
+        if (data.custom_apps) {
+          setAppList(data.custom_apps);
+        }
+      } catch (error) {
+        console.error("Config load error:", error);
+      }
+    };
+
+    fetchConfig();
+
+    // 2. Set global shortcut "Alt + Space"
     const setupShortcut = async () => {
       try {
         await register("Alt+Space", async (event) => {
@@ -38,7 +58,7 @@ function App() {
 
     setupShortcut();
 
-    // 2. Set ESC to hide window
+    // 3. Set ESC to hide window
     const handleKeyDown = async (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         await appWindow.hide();
@@ -46,7 +66,7 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
 
-    // 3. クリーンアップ処理
+    // 4. クリーンアップ処理
     // アプリのリロード時などに、イベントやショートカットが二重登録されるのを防ぐ
     return () => {
       unregister("Alt+Space").catch(console.error);
@@ -59,8 +79,8 @@ function App() {
     const value = e.target.value;
     setQuery(value);
     if (value) {
-      const filtered = DUMMY_APPS.filter(app =>
-        app.toLocaleLowerCase().includes(value.toLocaleLowerCase())
+      const filtered = appList.filter(app =>
+        app.name.toLowerCase().includes(value.toLowerCase())
       );
       setResults(filtered);
     } else {
@@ -71,9 +91,18 @@ function App() {
   // Enter => exe & hide window
   const handleExecute = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key == "Enter" && query) {
-      // LATER : Call out OS's cmd
-      console.log('Executed: &{results.length > 0 ? results[0] : query}');
+      // Set input or top of the list => target
+      const target = results.length > 0 ? results[0].target : query;
 
+      try {
+        // Call open_target in Rust
+        await invoke("open_target", { target: target});
+        console.log('Successful: Opened ${target}');
+      } catch (error) {
+        console.error('ERROR: ', error);
+      }
+
+      // Hide & reset Launcher
       const appWindow = getCurrentWindow();
       await appWindow.hide();
       setQuery("");
@@ -107,7 +136,7 @@ function App() {
         <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0 0", background: "#2a2a2a", borderRadius: "10px", overflow: "hidden" }}>
           {results.map((app, index) => (
             <li key={index} style={{ padding: "15px 20px", color: index === 0 ? "#ffffff" : "#aaaaaa", background: index === 0 ? "#3a3a3a" : "transparent", fontSize: "18px" }}>
-              {app}
+              {app.name}
             </li>
           ))}
         </ul>

@@ -1,0 +1,8 @@
+{
+  "custom_apps": [
+    { "name": "Google Chrome", "target": "chrome" },
+    { "name": "Notepad", "target": "notepad" },
+    { "name": "Calculator", "target": "calc" },
+    { "name": "YouTube", "target": "https://youtube.com" }
+  ]
+}
