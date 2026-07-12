@@ -4,7 +4,6 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
-// Def data type of Apps
 interface AppItem {
   name: string;
   target: string;
@@ -12,46 +11,79 @@ interface AppItem {
 
 function App() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<string[]>([]);
-  const [appList, setAppList] = useState([]);
+  const [results, setResults] = useState<AppItem[]>([]); // ★型を AppItem[] に修正
+  const [appList, setAppList] = useState<AppItem[]>([]); // ★型を AppItem[] に修正
+  const [openWindows, setOpenWindows] = useState<AppItem[]>([]); // ★型を AppItem[] に修正
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // ▼ 追加：上下キーで選択しているアイテムのインデックス
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const showError = () => {
+    setErrorMsg("Can't open the App!");
+    setTimeout(() => setErrorMsg(null), 3000);
+  };
+
+  // ▼ useEffectの外に出し、どこからでも呼べるようにした最強の launchApp
+  const launchApp = async (app: AppItem) => {
+    let finalTarget = app.target;
+
+    if (finalTarget.startsWith("http")) {
+      try {
+        const urlObj = new URL(finalTarget);
+        const keyword = urlObj.hostname.replace("www.", "").split(".")[0];
+        const matchingWindow = openWindows.find(w => 
+          w.name.toLowerCase().includes(keyword.toLowerCase())
+        );
+        
+        if (matchingWindow) {
+          finalTarget = matchingWindow.target;
+        }
+      } catch (e) {
+        console.warn("URL parse error:", e);
+      }
+    }
+
+    try {
+      await invoke("open_target", { target: finalTarget });
+      
+      // 成功したらウィンドウを隠してリセットする
+      const appWindow = getCurrentWindow();
+      await appWindow.hide();
+      setQuery("");
+      setResults([]);
+      setSelectedIndex(0);
+
+    } catch (error) {
+      console.error("Launch error: ", error);
+      showError(); // 失敗した時はウィンドウを隠さず、エラーを出す！
+    }
+  };
 
   useEffect(() => {
-    // Get window instance
     const appWindow = getCurrentWindow();
 
-    // 1. Load config.json & Start menu
     const fetchConfig = async () => {
       try {
-        // Load currently opened windows
-        let openWindows: AppItem[] = [];
+        let windows: AppItem[] = [];
         try {
-          openWindows = await invoke("get_open_windows");
-        } catch (e) {
-          console.warn("Window scan failed", e);
-        }
+          windows = await invoke("get_open_windows");
+          setOpenWindows(windows);
+        } catch (e) {}
 
-        // Load from JSON
         let customApps: AppItem[] = [];
         try {
           const jsonString: string = await invoke("load_config");
           const data = JSON.parse(jsonString);
-          if (data.custom_apps) {
-            setAppList(data.custom_apps);
-          }
-        } catch (e) {
-          console.error("Config load failed or missing:", e);
-        }
+          if (data.custom_apps) customApps = data.custom_apps;
+        } catch (e) {}
 
-        // Load from START MENU
         let scannedApps: AppItem[] = [];
         try {
           scannedApps = await invoke("scan_apps");
-        } catch (e) {
-          console.warn("Scan failed", e);
-        }
+        } catch (e) {}
 
-        // Merge
-        setAppList([...openWindows, ...customApps, ...scannedApps]);
+        setAppList([...windows, ...customApps, ...scannedApps]);
       } catch (error) {
         console.error("Fetch error: ", error);
       }
@@ -59,7 +91,6 @@ function App() {
 
     fetchConfig();
 
-    // 2. Set global shortcut "Alt + Space"
     const setupShortcut = async () => {
       try {
         await register("Alt+Space", async (event) => {
@@ -68,11 +99,13 @@ function App() {
             if (isVisible) {
               await appWindow.hide();
             } else {
+              // 開くたびに最新のウィンドウ情報を取得し直す
+              fetchConfig(); 
               await appWindow.show();
               await appWindow.setFocus();
-              // Clear previous inputs
               setQuery("");
               setResults([]);
+              setSelectedIndex(0);
             }
           }
         });
@@ -83,26 +116,21 @@ function App() {
 
     setupShortcut();
 
-    // 3. Set ESC to hide window
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        await appWindow.hide();
-      }
+      if (e.key === "Escape") await appWindow.hide();
     };
     window.addEventListener("keydown", handleKeyDown);
 
-    // 4. クリーンアップ処理
-    // アプリのリロード時などに、イベントやショートカットが二重登録されるのを防ぐ
     return () => {
       unregister("Alt+Space").catch(console.error);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
-  // Remake list on every inputs
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setQuery(value);
+    setSelectedIndex(0); // 検索文字が変わったら選択位置を一番上に戻す
     if (value) {
       const filtered = appList.filter(app =>
         app.name.toLowerCase().includes(value.toLowerCase())
@@ -113,25 +141,24 @@ function App() {
     }
   };
 
-  // Enter => exe & hide window
+  // ▼ Enterキーと、上下キーの処理を統合
   const handleExecute = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key == "Enter" && query) {
-      // Set input or top of the list => target
-      const target = results.length > 0 ? results[0].target : query;
-
-      try {
-        // Call open_target in Rust
-        await invoke("open_target", { target: target });
-        console.log('Successful: Opened ${target}');
-      } catch (error) {
-        console.error('ERROR: ', error);
+    if (e.key === "Enter") {
+      if (results.length > 0) {
+        // リストから選択されているものを起動
+        await launchApp(results[selectedIndex]);
+      } else if (query) {
+        // リストにない直接入力のコマンドを起動
+        await launchApp({ name: query, target: query });
       }
-
-      // Hide & reset Launcher
-      const appWindow = getCurrentWindow();
-      await appWindow.hide();
-      setQuery("");
-      setResults([]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      // 下キー：リストの最後尾でなければ1つ下へ
+      setSelectedIndex(prev => (prev < results.length - 1 ? prev + 1 : prev));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      // 上キー：一番上でなければ1つ上へ
+      setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
     }
   };
 
@@ -156,15 +183,39 @@ function App() {
           boxShadow: "0 4px 6px rgba(0,0,0,0.3)"
         }}
       />
-      {/* Display list if result exists */}
       {results.length > 0 && (
         <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0 0", background: "#2a2a2a", borderRadius: "10px", overflow: "hidden" }}>
           {results.map((app, index) => (
-            <li key={index} style={{ padding: "15px 20px", color: index === 0 ? "#ffffff" : "#aaaaaa", background: index === 0 ? "#3a3a3a" : "transparent", fontSize: "18px" }}>
+            <li key={index} 
+                onClick={() => launchApp(app)} 
+                // ▼ 選択されているアイテムの背景色と文字色をハイライトする
+                style={{ 
+                  padding: "15px 20px", 
+                  color: index === selectedIndex ? "#ffffff" : "#aaaaaa", 
+                  background: index === selectedIndex ? "#4a4a4a" : "transparent", 
+                  fontSize: "18px",
+                  cursor: "pointer"
+                }}>
               {app.name}
             </li>
           ))}
         </ul>
+      )}
+      {errorMsg && (
+        <div style={{
+          position: "fixed",
+          bottom: "20px",
+          right: "20px",
+          background: "rgba(202, 68, 68, 0.95)",
+          color: "white",
+          padding: "10px 20px",
+          borderRadius: "8px",
+          fontSize: "14px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          zIndex: 9999
+        }}>
+          {errorMsg}
+        </div>
       )}
     </main>
   );

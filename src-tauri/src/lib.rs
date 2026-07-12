@@ -102,6 +102,7 @@ fn load_config() -> Result<String, String> {
 #[tauri::command]
 fn open_target(target : &str) -> Result<String, String> {
     use std::process::Command;
+    use std::os::windows::process::CommandExt;
     if target.starts_with("HWND:"){
      let hwnd_str = &target[5..];
      if let Ok(hwnd_val) = hwnd_str.parse::<usize>() {
@@ -116,14 +117,20 @@ fn open_target(target : &str) -> Result<String, String> {
      }   
     }
 
-    // Launch apps by "cmd /c start" in windows
-    let output = Command::new("cmd")
-        .args(["/c", "start", "/MAX", "", target])
+    // Launch apps by powerShell in windows
+    let ps_command = format!(
+        "try {{ Start-Process '{}' -WindowStyle Maximized -ErrorAction Stop }} catch {{ exit 1 }}",
+        target
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &ps_command])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW（黒い画面を出さない）
         .output()
         .map_err(|e| e.to_string())?;
 
     if output.status.success() {
-        Ok(format!("Opened: {}", target))
+        Ok(format!("Opened max: {}", target))
     } else {
         Err(format!("Failed to open: {}", target))
     }
