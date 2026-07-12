@@ -19,16 +19,31 @@ function App() {
     // Get window instance
     const appWindow = getCurrentWindow();
 
-    // 1. Load config.json
+    // 1. Load config.json & Start menu
     const fetchConfig = async () => {
       try {
-        const jsonString: string = await invoke("load_config");
-        const data = JSON.parse(jsonString);
-        if (data.custom_apps) {
-          setAppList(data.custom_apps);
+        let customApps: AppItem[] = [];
+        try {
+          const jsonString: string = await invoke("load_config");
+          const data = JSON.parse(jsonString);
+          if (data.custom_apps) {
+            setAppList(data.custom_apps);
+          }
+        } catch (e) {
+          console.error("Config load failed or missing:", e);
         }
+
+        let scannedApps: AppItem[] = [];
+        try {
+          scannedApps = await invoke("scan_apps");
+        } catch (e) {
+          console.warn("Scan failed", e);
+        }
+
+        // Merge
+        setAppList([...customApps, ...scannedApps]);
       } catch (error) {
-        console.error("Config load error:", error);
+        console.error("Fetch error: ", error);
       }
     };
 
@@ -96,7 +111,7 @@ function App() {
 
       try {
         // Call open_target in Rust
-        await invoke("open_target", { target: target});
+        await invoke("open_target", { target: target });
         console.log('Successful: Opened ${target}');
       } catch (error) {
         console.error('ERROR: ', error);
