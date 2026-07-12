@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
+import Fuse from "fuse.js";
 
 interface AppItem {
   name: string;
@@ -11,20 +12,42 @@ interface AppItem {
 
 function App() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AppItem[]>([]); // ★型を AppItem[] に修正
-  const [appList, setAppList] = useState<AppItem[]>([]); // ★型を AppItem[] に修正
-  const [openWindows, setOpenWindows] = useState<AppItem[]>([]); // ★型を AppItem[] に修正
+  const [results, setResults] = useState<AppItem[]>([]);
+  const [appList, setAppList] = useState<AppItem[]>([]);
+  const [openWindows, setOpenWindows] = useState<AppItem[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
-  // ▼ 追加：上下キーで選択しているアイテムのインデックス
+
+  const listRef = React.useRef<HTMLUListElement>(null);
+
+  // 上下キーで選択しているアイテムのインデックス
   const [selectedIndex, setSelectedIndex] = useState(0);
 
+  // useEffectを使って、selectedIndexが変わるたびにスクロールさせる
+  useEffect(() => {
+    if (listRef.current) {
+      const activeItem = listRef.current.children[selectedIndex] as HTMLElement;
+      if (activeItem) {
+        activeItem.scrollIntoView({
+          behavior: "smooth", // スッとスクロールさせる
+          block: "nearest"    // 画面内に収まるように最低限だけスクロール
+        });
+      }
+    }
+  }, [selectedIndex]); // selectedIndexが変わるたびに実行
+
   const showError = () => {
-    setErrorMsg("Can't open the App!");
+    setErrorMsg("Invalid command!");
     setTimeout(() => setErrorMsg(null), 3000);
   };
 
-  // ▼ useEffectの外に出し、どこからでも呼べるようにした最強の launchApp
+  // Icon
+  const getIcon = (target: string) => {
+    if (target.startsWith("http")) return "🌐";   // Webサイト
+    if (target.startsWith("HWND:")) return "🪟";  // 開いているウィンドウ
+    return "🚀";                                // アプリやコマンド
+  };
+
+  // Launch
   const launchApp = async (app: AppItem) => {
     let finalTarget = app.target;
 
@@ -32,10 +55,10 @@ function App() {
       try {
         const urlObj = new URL(finalTarget);
         const keyword = urlObj.hostname.replace("www.", "").split(".")[0];
-        const matchingWindow = openWindows.find(w => 
+        const matchingWindow = openWindows.find(w =>
           w.name.toLowerCase().includes(keyword.toLowerCase())
         );
-        
+
         if (matchingWindow) {
           finalTarget = matchingWindow.target;
         }
@@ -46,7 +69,7 @@ function App() {
 
     try {
       await invoke("open_target", { target: finalTarget });
-      
+
       // 成功したらウィンドウを隠してリセットする
       const appWindow = getCurrentWindow();
       await appWindow.hide();
@@ -69,19 +92,19 @@ function App() {
         try {
           windows = await invoke("get_open_windows");
           setOpenWindows(windows);
-        } catch (e) {}
+        } catch (e) { }
 
         let customApps: AppItem[] = [];
         try {
           const jsonString: string = await invoke("load_config");
           const data = JSON.parse(jsonString);
           if (data.custom_apps) customApps = data.custom_apps;
-        } catch (e) {}
+        } catch (e) { }
 
         let scannedApps: AppItem[] = [];
         try {
           scannedApps = await invoke("scan_apps");
-        } catch (e) {}
+        } catch (e) { }
 
         setAppList([...windows, ...customApps, ...scannedApps]);
       } catch (error) {
@@ -100,7 +123,7 @@ function App() {
               await appWindow.hide();
             } else {
               // 開くたびに最新のウィンドウ情報を取得し直す
-              fetchConfig(); 
+              fetchConfig();
               await appWindow.show();
               await appWindow.setFocus();
               setQuery("");
@@ -132,10 +155,15 @@ function App() {
     setQuery(value);
     setSelectedIndex(0); // 検索文字が変わったら選択位置を一番上に戻す
     if (value) {
-      const filtered = appList.filter(app =>
-        app.name.toLowerCase().includes(value.toLowerCase())
-      );
-      setResults(filtered);
+      const fuse = new Fuse(appList, {
+        keys: ["name", "target"], // 名前だけでなく、URLやパス（target）も検索対象にする
+        threshold: 0.4, // 0.0(完全一致)～1.0(なんでもマッチ)
+      });
+
+      // Search
+      const result = fuse.search(value);
+      // Set item
+      setResults(result.map(res => res.item));
     } else {
       setResults([]);
     }
@@ -163,60 +191,33 @@ function App() {
   };
 
   return (
-    <main style={{ padding: "20px", background: "rgba(30, 30, 30, 0.9)", height: "100vh", boxSizing: "border-box" }}>
-      <input
-        type="text"
-        placeholder="Search apps, tabs, or commands..."
-        autoFocus
-        value={query}
-        onChange={handleSearch}
-        onKeyDown={handleExecute}
-        style={{
-          width: "100%",
-          padding: "15px 20px",
-          fontSize: "24px",
-          borderRadius: "10px",
-          border: "none",
-          outline: "none",
-          background: "#2a2a2a",
-          color: "#ffffff",
-          boxShadow: "0 4px 6px rgba(0,0,0,0.3)"
-        }}
-      />
-      {results.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0 0", background: "#2a2a2a", borderRadius: "10px", overflow: "hidden" }}>
-          {results.map((app, index) => (
-            <li key={index} 
-                onClick={() => launchApp(app)} 
-                // ▼ 選択されているアイテムの背景色と文字色をハイライトする
-                style={{ 
-                  padding: "15px 20px", 
-                  color: index === selectedIndex ? "#ffffff" : "#aaaaaa", 
-                  background: index === selectedIndex ? "#4a4a4a" : "transparent", 
-                  fontSize: "18px",
-                  cursor: "pointer"
-                }}>
-              {app.name}
-            </li>
-          ))}
-        </ul>
-      )}
-      {errorMsg && (
-        <div style={{
-          position: "fixed",
-          bottom: "20px",
-          right: "20px",
-          background: "rgba(202, 68, 68, 0.95)",
-          color: "white",
-          padding: "10px 20px",
-          borderRadius: "8px",
-          fontSize: "14px",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-          zIndex: 9999
-        }}>
-          {errorMsg}
-        </div>
-      )}
+    <main className="main-container">
+      <div className="launcher-wrapper">
+        <input
+          className="search-input"
+          type="text"
+          placeholder="Where do you wanna go?"
+          autoFocus
+          value={query}
+          onChange={handleSearch}
+          onKeyDown={handleExecute}
+        />
+
+        {results.length > 0 && (
+          <ul className="suggest-list" ref={listRef}>
+            {results.slice(0, 20).map((app, index) => (
+              <li key={index}
+                onClick={() => launchApp(app)}
+                className={`suggest-item ${index === selectedIndex ? 'selected' : 'unselected'}`}
+              >
+                <span style={{ fontSize: "20px" }}>{getIcon(app.target)}</span>
+                <span>{app.name}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {errorMsg && <div className="error-popup">{errorMsg}</div>}
     </main>
   );
 }
