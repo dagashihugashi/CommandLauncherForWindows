@@ -4,11 +4,19 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import Fuse from "fuse.js";
+import { show } from "@tauri-apps/api/app";
 
 interface AppItem {
   name: string;
   target: string;
+  description?: string;
 }
+
+const ADD_COMMAND: AppItem = {
+  name: "Add command",
+  target: "cmd:add",
+  description: "Create a new custom command"
+};
 
 function App() {
   const [query, setQuery] = useState("");
@@ -16,6 +24,8 @@ function App() {
   const [appList, setAppList] = useState<AppItem[]>([]);
   const [openWindows, setOpenWindows] = useState<AppItem[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [mode, setMode] = useState<'search' | 'add-command'>('search');
+  const [newApp, setNewApp] = useState({ name: '', target: '', description: '' });
 
   const listRef = React.useRef<HTMLUListElement>(null);
 
@@ -63,7 +73,7 @@ function App() {
           finalTarget = matchingWindow.target;
         }
       } catch (e) {
-        console.warn("URL parse error:", e);
+        //console.warn("URL parse error:", e);
       }
     }
 
@@ -78,7 +88,7 @@ function App() {
       setSelectedIndex(0);
 
     } catch (error) {
-      console.error("Launch error: ", error);
+      //console.error("Launch error: ", error);
       showError(); // 失敗した時はウィンドウを隠さず、エラーを出す！
     }
   };
@@ -108,7 +118,7 @@ function App() {
 
         setAppList([...windows, ...customApps, ...scannedApps]);
       } catch (error) {
-        console.error("Fetch error: ", error);
+        //console.error("Fetch error: ", error);
       }
     };
 
@@ -133,7 +143,7 @@ function App() {
           }
         });
       } catch (error) {
-        console.error("Failed to register shortcut:", error);
+        //console.error("Failed to register shortcut:", error);
       }
     };
 
@@ -161,23 +171,39 @@ function App() {
       });
 
       // Search
-      const result = fuse.search(value);
+      const fuseResult = fuse.search(value);
       // Set item
-      setResults(result.map(res => res.item));
+      const filteredResult = fuseResult.map(res => res.item);
+
+      // Merge "add command"
+      if ("add command".includes(value.toLowerCase())) {
+        setResults([ADD_COMMAND, ...filteredResult]);
+      } else {
+        setResults(filteredResult);
+      }
     } else {
       setResults([]);
     }
+    console.log(appList);
   };
 
   // ▼ Enterキーと、上下キーの処理を統合
   const handleExecute = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
+      const selectedItem = results[selectedIndex] || { name: query, target: query };
+      if (selectedItem.target === "cmd:add") {
+        setMode('add-command');
+        setQuery("");
+        setResults([]);
+        return;
+      }
+
+      // Launch
       if (results.length > 0) {
         // リストから選択されているものを起動
         await launchApp(results[selectedIndex]);
       } else if (query) {
-        // リストにない直接入力のコマンドを起動
-        await launchApp({ name: query, target: query });
+        showError();
       }
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -193,28 +219,65 @@ function App() {
   return (
     <main className="main-container">
       <div className="launcher-wrapper">
-        <input
-          className="search-input"
-          type="text"
-          placeholder="Where do you wanna go?"
-          autoFocus
-          value={query}
-          onChange={handleSearch}
-          onKeyDown={handleExecute}
-        />
+        {mode === 'search' ? (
+          <>
+            <input
+              className="search-input"
+              type="text"
+              placeholder="Where do you wanna go?"
+              autoFocus
+              value={query}
+              onChange={handleSearch}
+              onKeyDown={handleExecute}
+            />
 
-        {results.length > 0 && (
-          <ul className="suggest-list" ref={listRef}>
-            {results.slice(0, 20).map((app, index) => (
-              <li key={index}
-                onClick={() => launchApp(app)}
-                className={`suggest-item ${index === selectedIndex ? 'selected' : 'unselected'}`}
-              >
-                <span style={{ fontSize: "20px" }}>{getIcon(app.target)}</span>
-                <span>{app.name}</span>
-              </li>
-            ))}
-          </ul>
+            {results.length > 0 && (
+              <ul className="suggest-list" ref={listRef}>
+                {results.slice(0, 20).map((app, index) => (
+                  <li key={index}
+                    onClick={() => launchApp(app)}
+                    className={`suggest-item ${index === selectedIndex ? 'selected' : 'unselected'}`}
+                  >
+                    <span style={{ fontSize: "20px" }}>{getIcon(app.target)}</span>
+                    <span>{app.name}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <div className="add-command-container">
+            <h2>Add New Command</h2>
+            <input className="add-command-input" placeholder="Name" value={newApp.name} onChange={e => setNewApp({ ...newApp, name: e.target.value })} />
+            <input className="add-command-input" placeholder="Target (URL or Path)" value={newApp.target} onChange={e => setNewApp({ ...newApp, target: e.target.value })} />
+            <input className="add-command-input" placeholder="Description (Optional)" value={newApp.description} onChange={e => setNewApp({ ...newApp, description: e.target.value })} />
+
+            <button className="save-button" onClick={async () => {
+              try {
+                await invoke("save_command", {
+                  name: newApp.name,
+                  target: newApp.target,
+                  description: newApp.description || null
+                });
+                // 2. 保存に成功したら、現在のReactのリストにも直接追加する（再起動しなくてもすぐ検索できるように）
+                setAppList(prev => [...prev, newApp]);
+
+                // 3. 画面を戻して入力をリセット
+                setMode('search');
+                setNewApp({ name: '', target: '', description: '' });
+              } catch (e) {
+                // 保存に失敗した場合はエラー表示
+                console.error("Save error:", e);
+                setErrorMsg("Failed to save command!");
+                setTimeout(() => setErrorMsg(null), 3000);
+              }
+            }}>
+              Save
+            </button>
+            <button className="save-button" style={{ marginLeft: '10px', backgroundColor: '#555' }} onClick={() => setMode('search')}>
+              Cancel
+            </button>
+          </div>
         )}
       </div>
       {errorMsg && <div className="error-popup">{errorMsg}</div>}

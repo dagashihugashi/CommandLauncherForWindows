@@ -1,8 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::env;
-use serde::Serialize;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowTextW, GetWindowTextLengthW, 
@@ -11,10 +11,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 // Data structure
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct AppItem {
     name: String,
     target: String,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Config {
+    custom_apps: Vec<AppItem>,
 }
 
 unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL{
@@ -32,6 +39,7 @@ unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL{
                 windows.push(AppItem {
                     name: format!("🪟 {}", title), // 識別しやすいように窓アイコンをつける
                     target: format!("HWND:{}", hwnd.0 as usize), // ハンドル（ID）を保存
+                    description: None,
                 });
             }
         }
@@ -75,6 +83,7 @@ fn scan_apps() -> Result<Vec<AppItem>, String> {
                         apps.push(AppItem {
                             name: name.to_string(), 
                             target: path.to_string_lossy().to_string(),
+                            description: None,
                         });
                     }
                 }
@@ -136,12 +145,37 @@ fn open_target(target : &str) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+fn save_command(name: String, target: String, description: Option<String>) -> Result<(), String> {
+    let config_path = "config.json";
+
+    // 現在のconfig.jsonを読み込むか、なければ空の初期構造を作る
+    let mut config: Config = match fs::read_to_string(config_path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or(Config { custom_apps: vec![] }),
+        Err(_) => Config { custom_apps: vec![] }, // ファイルがない場合は新規作成
+    };
+
+    // 新しいコマンドをリストに追加
+    config.custom_apps.push(AppItem {
+        name,
+        target,
+        description,
+    });
+
+    // 整形されたJSON文字列に変換してファイルに書き込む
+    let new_content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(config_path, new_content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_target, load_config, scan_apps, get_open_windows])
+        .invoke_handler(tauri::generate_handler![open_target, load_config, scan_apps, get_open_windows, save_command])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
