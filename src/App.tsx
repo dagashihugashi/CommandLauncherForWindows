@@ -50,6 +50,11 @@ function App() {
     setTimeout(() => setErrorMsg(null), 3000);
   };
 
+  const showSaveError = () => {
+    setErrorMsg("Failed to save command!");
+    setTimeout(() => setErrorMsg(null), 3000);
+  };
+
   // Icon
   const getIcon = (target: string) => {
     if (target.startsWith("http")) return "🌐";   // Webサイト
@@ -216,6 +221,38 @@ function App() {
     }
   };
 
+  // 保存処理を一つの関数にまとめる
+  const handleSaveCommand = async () => {
+    // 空欄なら保存しない（簡易バリデーション）
+    if (!newApp.name || !newApp.target) return;
+
+    try {
+      await invoke("save_command", { 
+        name: newApp.name, 
+        target: newApp.target, 
+        description: newApp.description || null 
+      });
+      setAppList(prev => [...prev, newApp]);
+      setMode('search'); 
+      setNewApp({ name: '', target: '', description: '' }); 
+    } catch (e) {
+      showSaveError();
+    }
+  };
+
+  // Add Command 画面用のキーボード操作ハンドラ
+  const handleAddCommandKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSaveCommand();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setMode('search');
+      setNewApp({ name: '', target: '', description: '' });
+    }
+  };
+
+
   return (
     <main className="main-container">
       <div className="launcher-wrapper">
@@ -248,35 +285,59 @@ function App() {
         ) : (
           <div className="add-command-container">
             <h2>Add New Command</h2>
-            <input className="add-command-input" placeholder="Name" value={newApp.name} onChange={e => setNewApp({ ...newApp, name: e.target.value })} />
-            <input className="add-command-input" placeholder="Target (URL or Path)" value={newApp.target} onChange={e => setNewApp({ ...newApp, target: e.target.value })} />
-            <input className="add-command-input" placeholder="Description (Optional)" value={newApp.description} onChange={e => setNewApp({ ...newApp, description: e.target.value })} />
+            
+            <div className="input-group">
+              <label>Name</label>
+              <input 
+                className="add-command-input" 
+                placeholder="e.g., My App" 
+                value={newApp.name} 
+                onChange={e => setNewApp({ ...newApp, name: e.target.value })} 
+                onKeyDown={handleAddCommandKeyDown}
+                autoFocus
+              />
+            </div>
+            
+            <div className="input-group">
+              <label>Target (URL or Path)</label>
+              <input 
+                className="add-command-input" 
+                placeholder="e.g., https://... or C:\..." 
+                value={newApp.target} 
+                onChange={e => setNewApp({ ...newApp, target: e.target.value })} 
+                onKeyDown={handleAddCommandKeyDown}
+              />
+            </div>
+            
+            <div className="input-group">
+              <label>Description (Optional)</label>
+              <input 
+                className="add-command-input" 
+                placeholder="What does this do?" 
+                value={newApp.description} 
+                onChange={e => setNewApp({ ...newApp, description: e.target.value })} 
+                onKeyDown={handleAddCommandKeyDown}
+              />
+            </div>
 
-            <button className="save-button" onClick={async () => {
-              try {
-                await invoke("save_command", {
-                  name: newApp.name,
-                  target: newApp.target,
-                  description: newApp.description || null
-                });
-                // 2. 保存に成功したら、現在のReactのリストにも直接追加する（再起動しなくてもすぐ検索できるように）
-                setAppList(prev => [...prev, newApp]);
-
-                // 3. 画面を戻して入力をリセット
-                setMode('search');
-                setNewApp({ name: '', target: '', description: '' });
-              } catch (e) {
-                // 保存に失敗した場合はエラー表示
-                console.error("Save error:", e);
-                setErrorMsg("Failed to save command!");
-                setTimeout(() => setErrorMsg(null), 3000);
-              }
-            }}>
-              Save
-            </button>
-            <button className="save-button" style={{ marginLeft: '10px', backgroundColor: '#555' }} onClick={() => setMode('search')}>
-              Cancel
-            </button>
+            <div className="button-group">
+              <button 
+                className="cmd-button cancel-button" 
+                onClick={() => {
+                  setMode('search');
+                  setNewApp({ name: '', target: '', description: '' });
+                }}
+              >
+                Cancel
+              </button>
+              
+              <button 
+                className="cmd-button save-button" 
+                onClick={handleSaveCommand}
+              >
+                Save
+              </button>
+            </div>
           </div>
         )}
       </div>
