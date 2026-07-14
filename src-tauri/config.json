@@ -24,6 +24,11 @@
       "name": "cs50",
       "target": "https://cs50.harvard.edu/x/",
       "description": "CS50 by Harvard"
+    },
+    {
+      "name": "github",
+      "target": "https://github.com/",
+      "description": "github/home"
     }
   ]
 }
