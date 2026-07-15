@@ -1,0 +1,34 @@
+{
+  "custom_apps": [
+    {
+      "name": "Google Chrome",
+      "target": "chrome",
+      "description": null
+    },
+    {
+      "name": "Notepad",
+      "target": "notepad",
+      "description": null
+    },
+    {
+      "name": "Calculator",
+      "target": "calc",
+      "description": null
+    },
+    {
+      "name": "YouTube",
+      "target": "https://youtube.com",
+      "description": null
+    },
+    {
+      "name": "cs50",
+      "target": "https://cs50.harvard.edu/x/",
+      "description": "CS50 by Harvard"
+    },
+    {
+      "name": "github",
+      "target": "https://github.com/",
+      "description": "github/home"
+    }
+  ]
+}

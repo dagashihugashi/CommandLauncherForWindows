@@ -1,0 +1,240 @@
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+/* サジェストリスト用の細いスクロールバー */
+.suggest-list::-webkit-scrollbar {
+  width: 4px; /* 通常の約半分の細さ */
+}
+.suggest-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.suggest-list::-webkit-scrollbar-thumb {
+  background: #666;
+  border-radius: 2px;
+}
+.suggest-list::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
+
+.main-container {
+  padding: 20px;
+  padding-bottom: 5px;
+  padding-top: 10px;
+  background: #202020;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.launcher-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 親のmainの中で最大まで使う */
+  overflow: hidden; /* 中身がはみ出ないように制限 */
+}
+
+.search-input {
+  flex-shrink: 0;
+  width: 100%;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  margin-left: 20px;
+  margin-right: 20px;
+  font-size: 20px;
+  border-radius: 5px;
+  border: none;
+  outline: none;
+  background: #2a2a2a;
+  color: #999;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+.search-input::placeholder {
+  font-weight: lighter;
+  font-size: 17px;
+  font-style: italic;
+  color: #666;
+}
+
+.suggest-list {
+  list-style: none;
+  padding: 8px;
+  margin: 0;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  margin-left: 20px;
+  background: #2a2a2a;
+  border-radius: 10px;
+  flex: 1;
+  max-height: 400px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  margin: 2px 0;
+  border-radius: 6px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.suggest-item.selected {
+  background: #404040;
+  color: #ffffff;
+}
+
+.suggest-item.unselected {
+  background: transparent;
+  color: #aaaaaa;
+}
+
+.add-command-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* 各要素の間の余白 */
+  padding: 24px;
+  background-color: #1a1a1a;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+
+.add-command-container h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.4rem;
+  font-weight: 500;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-group label {
+  font-size: 0.85rem;
+  color: #888888; /* 控えめなラベル色 */
+  margin-left: 4px;
+}
+
+.add-command-input {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #333333;
+  background-color: #121212;
+  color: #eeeeee;
+  font-size: 1rem;
+  outline: none;
+  transition: all 0.2s ease; /* アニメーションを滑らかに */
+}
+
+.add-command-input:focus {
+  border-color: #666666;
+  /* 白に近い淡い光を放つ */
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+}
+
+.button-group {
+  display: flex;
+  justify-content: flex-end; /* 右寄せ */
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.cmd-button {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: 1px solid #333333;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  /* 通常時は少し落ち着いた白文字 */
+  color: #bbbbbb; 
+}
+
+/* Cancelボタン（ベースは暗めの黒） */
+.cancel-button {
+  background-color: #111111;
+}
+
+/* Saveボタン（ベースは白に近づけた明るめの黒/グレー） */
+.save-button {
+  background-color: #2a2a2a;
+}
+
+/* ★ ホバー時のアニメーション（浮き上がり ＋ 文字が明るく発光） */
+.cmd-button:hover {
+  transform: translateY(-2px); /* 少し浮く */
+  color: #ffffff; /* 文字が真っ白に明るくなる */
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.4); /* 文字自体が光る */
+}
+
+.cancel-button:hover {
+  background-color: #1a1a1a;
+  border-color: #555555;
+}
+
+.save-button:hover {
+  background-color: #3a3a3a;
+  border-color: #777777;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.05); /* Saveだけ全体もわずかに光る */
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px; /* りんの希望の角丸 */
+  letter-spacing: 0.5px;
+  min-width: 36px; /* 幅を揃えてリストを縦に綺麗に揃える */
+}
+
+/* 種類ごとの色分け (ダークテーマに合う色合い) */
+.badge-cmd {
+  background-color: #2d2d2d;
+  color: #a3a3a3;
+  border: 1px solid #404040;
+}
+
+.badge-url {
+  background-color: #1a2b3c;
+  color: #66b3ff;
+  border: 1px solid #264059;
+}
+
+.badge-win {
+  background-color: #1a3c28;
+  color: #66ff99;
+  border: 1px solid #26593b;
+}
+
+.badge-app {
+  background-color: #3c1a1a;
+  color: #ff6666;
+  border: 1px solid #592626;
+}
+
+/* エラーポップアップ */
+.error-popup {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(202, 68, 68, 0.95);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 9999;
+}
