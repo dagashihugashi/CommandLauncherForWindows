@@ -188,6 +188,43 @@ body {
   box-shadow: 0 4px 12px rgba(255, 255, 255, 0.05); /* Saveだけ全体もわずかに光る */
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px; /* りんの希望の角丸 */
+  letter-spacing: 0.5px;
+  min-width: 36px; /* 幅を揃えてリストを縦に綺麗に揃える */
+}
+
+/* 種類ごとの色分け (ダークテーマに合う色合い) */
+.badge-cmd {
+  background-color: #2d2d2d;
+  color: #a3a3a3;
+  border: 1px solid #404040;
+}
+
+.badge-url {
+  background-color: #1a2b3c;
+  color: #66b3ff;
+  border: 1px solid #264059;
+}
+
+.badge-win {
+  background-color: #1a3c28;
+  color: #66ff99;
+  border: 1px solid #26593b;
+}
+
+.badge-app {
+  background-color: #3c1a1a;
+  color: #ff6666;
+  border: 1px solid #592626;
+}
+
 /* エラーポップアップ */
 .error-popup {
   position: fixed;
