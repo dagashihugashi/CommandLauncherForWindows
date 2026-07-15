@@ -57,10 +57,11 @@ function App() {
   };
 
   // Icon
-  const getIcon = (target: string) => {
-    if (target.startsWith("http")) return "🌐";   // Webサイト
-    if (target.startsWith("HWND:")) return "🪟";  // 開いているウィンドウ
-    return "🚀";                                // アプリやコマンド
+  const getBadge = (target: string) => {
+    if (target === "cmd:add") return <span className="badge badge-cmd">CMD</span>;
+    if (target.startsWith("http")) return <span className="badge badge-url">URL</span>;
+    if (target.startsWith("HWND:")) return <span className="badge badge-win">WIN</span>;
+    return <span className="badge badge-app">APP</span>;  // アプリやコマンド
   };
 
   // Launch
@@ -308,8 +309,8 @@ function App() {
                     onClick={() => launchApp(app)}
                     className={`suggest-item ${index === selectedIndex ? 'selected' : 'unselected'}`}
                   >
-                    <span style={{ fontSize: "20px" }}>{getIcon(app.target)}</span>
-                    <span>{app.name}</span>
+                    {getBadge(app.target)}
+                    <span>{app.name.replace("🪟 ", "")}</span>
                   </li>
                 ))}
               </ul>
