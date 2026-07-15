@@ -195,6 +195,7 @@ function App() {
     const value = e.target.value;
     setQuery(value);
     setSelectedIndex(0); // 検索文字が変わったら選択位置を一番上に戻す
+
     if (value) {
       const fuse = new Fuse(appList, {
         keys: ["name", "target"], // 名前だけでなく、URLやパス（target）も検索対象にする
@@ -205,6 +206,15 @@ function App() {
       const fuseResult = fuse.search(value);
       // Set item
       const filteredResult = fuseResult.map(res => res.item);
+
+      filteredResult.sort((a, b) => {
+        const isAHwnd = a.target.startsWith("HWND:");
+        const isBHwnd = b.target.startsWith("HWND:");
+
+        if (isAHwnd && !isBHwnd) return -1; // aがHWNDなら前にする
+        if (!isAHwnd && isBHwnd) return 1;  // bがHWNDなら前にする
+        return 0; // 両方HWND、あるいは両方違う場合は、Fuse.jsの元の順位（スコア）を維持
+      });
 
       // Merge "add command"
       if ("add command".includes(value.toLowerCase())) {
