@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import "./App.css";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import Fuse from "fuse.js";
-import { show } from "@tauri-apps/api/app";
+import React, { useEffect, useState } from "react";
+import "./App.css";
 
 interface AppItem {
   name: string;
@@ -26,10 +25,8 @@ function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [mode, setMode] = useState<'search' | 'add-command'>('search');
   const [newApp, setNewApp] = useState({ name: '', target: '', description: '' });
-
+  const errorTimeoutRef = React.useRef<number | null>(null);
   const listRef = React.useRef<HTMLUListElement>(null);
-
-  // 上下キーで選択しているアイテムのインデックス
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   // useEffectを使って、selectedIndexが変わるたびにスクロールさせる
@@ -45,14 +42,18 @@ function App() {
     }
   }, [selectedIndex]); // selectedIndexが変わるたびに実行
 
-  const showError = () => {
-    setErrorMsg("Invalid command!");
-    setTimeout(() => setErrorMsg(null), 3000);
-  };
-
-  const showSaveError = () => {
-    setErrorMsg("Failed to save command!");
-    setTimeout(() => setErrorMsg(null), 3000);
+  const showError = (message: string) => {
+    setErrorMsg(message);
+    
+    // 前のタイマーが残っていたらリセットする
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+    
+    // 新しいタイマーをセット (window.setTimeout と書くとブラウザの関数だと明示できて安全です)
+    errorTimeoutRef.current = window.setTimeout(() => {
+      setErrorMsg(null);
+    }, 3000);
   };
 
   // Icon
@@ -78,7 +79,7 @@ function App() {
           finalTarget = matchingWindow.target;
         }
       } catch (e) {
-        //console.warn("URL parse error:", e);
+        console.warn("URL parse error:", e);
       }
     }
 
@@ -93,8 +94,7 @@ function App() {
       setSelectedIndex(0);
 
     } catch (error) {
-      //console.error("Launch error: ", error);
-      showError(); // 失敗した時はウィンドウを隠さず、エラーを出す！
+      showError("Invalid command!");
     }
   };
 
@@ -107,23 +107,30 @@ function App() {
         try {
           windows = await invoke("get_open_windows");
           setOpenWindows(windows);
-        } catch (e) { }
+        } catch (e) { 
+          console.warn("Failed to get windows:", e);
+        }
 
         let customApps: AppItem[] = [];
         try {
           const jsonString: string = await invoke("load_config");
           const data = JSON.parse(jsonString);
           if (data.custom_apps) customApps = data.custom_apps;
-        } catch (e) { }
+        } catch (e) { 
+          console.warn("Failed to load config:", e);
+        }
 
         let scannedApps: AppItem[] = [];
         try {
           scannedApps = await invoke("scan_apps");
-        } catch (e) { }
+        } catch (e) { 
+          console.warn("Failed to load config:", e);
+        }
 
         setAppList([...windows, ...customApps, ...scannedApps]);
       } catch (error) {
-        //console.error("Fetch error: ", error);
+        console.error("Fetch error: ", error);
+        showError("Failed to initialize launcher");
       }
     };
 
@@ -148,22 +155,41 @@ function App() {
           }
         });
       } catch (error) {
-        //console.error("Failed to register shortcut:", error);
+        console.error("Failed to register shortcut:", error);
       }
     };
 
     setupShortcut();
-
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === "Escape") await appWindow.hide();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-
     return () => {
       unregister("Alt+Space").catch(console.error);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    }
+
   }, []);
+
+  // 画面全体でのキーボード操作を監視する
+  React.useEffect(() => {
+    const appWindow = getCurrentWindow();
+
+    const handleGlobalKeyDown = async (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (mode === 'add-command') {
+          // Add Command画面にいる時は、検索画面に戻るだけ（アプリは閉じない）
+          e.preventDefault();
+          e.stopPropagation();
+          setMode('search');
+          setNewApp({ name: '', target: '', description: '' });
+        } else {
+        // mode が 'search' の場合は何もしない（＝そのまま上位に伝わってアプリが閉じる）
+        await appWindow.hide();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, [mode]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -208,7 +234,7 @@ function App() {
         // リストから選択されているものを起動
         await launchApp(results[selectedIndex]);
       } else if (query) {
-        showError();
+        showError("Invalid command!");
       }
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -221,10 +247,12 @@ function App() {
     }
   };
 
-  // 保存処理を一つの関数にまとめる
   const handleSaveCommand = async () => {
-    // 空欄なら保存しない（簡易バリデーション）
-    if (!newApp.name || !newApp.target) return;
+    // 空欄なら保存しない
+    if (!newApp.name || !newApp.target) {
+      showError("Name and Target are required");
+      return;
+    }
 
     try {
       await invoke("save_command", { 
@@ -236,19 +264,14 @@ function App() {
       setMode('search'); 
       setNewApp({ name: '', target: '', description: '' }); 
     } catch (e) {
-      showSaveError();
+      showError("Failed to save command");
     }
   };
 
-  // Add Command 画面用のキーボード操作ハンドラ
   const handleAddCommandKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
       handleSaveCommand();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setMode('search');
-      setNewApp({ name: '', target: '', description: '' });
     }
   };
 
