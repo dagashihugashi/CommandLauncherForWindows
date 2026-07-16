@@ -9,6 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, SetForegroundWindow, ShowWindow,
     SW_RESTORE, IsIconic
 };
+use tauri::Manager;
 
 // Data structure
 #[derive(Serialize, Deserialize, Clone)]
