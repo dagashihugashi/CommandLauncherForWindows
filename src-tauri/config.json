@@ -1,18 +1,13 @@
 {
   "custom_apps": [
     {
-      "name": "youtube",
-      "target": "https://youtube.com",
+      "name": "google map",
+      "target": "https://map.com",
       "description": null
     },
     {
       "name": "github",
       "target": "https://github.com",
-      "description": null
-    },
-    {
-      "name": "map",
-      "target": "https://map.com",
       "description": null
     }
   ]
