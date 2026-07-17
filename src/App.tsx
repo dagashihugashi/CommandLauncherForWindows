@@ -32,6 +32,7 @@ function App() {
   const [editingOldName, setEditingOldName] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const successTimeoutRef = React.useRef<number | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<AppItem | null>(null);
 
   // useEffectを使って、selectedIndexが変わるたびにスクロールさせる
   useEffect(() => {
@@ -329,26 +330,23 @@ function App() {
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, appToDelete: AppItem) => {
-    e.stopPropagation(); // 親要素のクリックイベント（アプリ起動）を防ぐ
+  const handleDelete = (e: React.MouseEvent, app: AppItem) => {
+    e.stopPropagation();
+    setItemToDelete(app); // アラートの代わりに、削除対象をセットして自作ポップアップを表示
+  };
 
-    if (!window.confirm(`「${appToDelete.name}」を削除してもよろしいですか？`)) return;
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
 
     try {
-      // 1. Rustに削除を依頼
-      await invoke("delete_command", { name: appToDelete.name });
-
-      // 2. Reactの画面上から即座に消す（appListとresultsの両方からフィルタリング）
-      setAppList(prev => prev.filter(item => item.name !== appToDelete.name));
-      setResults(prev => prev.filter(item => item.name !== appToDelete.name));
-
-      // 3. 選択位置のズレを防ぐ
-      setSelectedIndex(0);
-
+      await invoke("delete_command", { name: itemToDelete.name });
+      setAppList(prev => prev.filter(item => item.name !== itemToDelete.name));
       showSuccess("Command deleted!");
-    } catch (error) {
-      console.error("削除エラー:", error);
+      setSelectedIndex(0);
+    } catch (e) {
       showError("Failed to delete command");
+    } finally {
+      setItemToDelete(null); // 削除が終わったらポップアップを閉じる
     }
   };
 
@@ -480,6 +478,30 @@ function App() {
       </div>
       {errorMsg && <div className="error-popup">✖  {errorMsg}</div>}
       {successMsg && <div className="success-popup">✔  {successMsg}</div>}
+      {itemToDelete && (
+        <div className="confirm-overlay">
+          <div className="confirm-box">
+            <p className="confirm-title">Are you sure?</p>
+            <p className="confirm-detail">
+              {itemToDelete.name}  <span>{itemToDelete.target}</span>
+            </p>
+            <div className="button-group">
+              <button
+                className="cmd-button cancel-button"
+                onClick={() => setItemToDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="cmd-button delete-confirm-btn"
+                onClick={confirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

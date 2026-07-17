@@ -284,6 +284,81 @@ body {
   background-color: rgba(255, 255, 255, 0.15);
 }
 
+/* --- カスタム確認ポップアップ --- */
+
+/* 画面全体を覆う半透明の黒背景 */
+.confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000; /* エラー通知などよりも手前に出す */
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* 真ん中に表示される確認ボックス */
+.confirm-box {
+  background-color: #1a1a1a;
+  border: 1px solid #333333;
+  padding: 24px 32px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  width: fit-content; /* 中身の長さに合わせて枠をピッタリ広げる */
+  min-width: 320px;
+}
+
+.confirm-box p {
+  margin: 0 0 20px 0;
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+.confirm-title {
+  margin: 0 0 8px 0;
+  color: #ffffff;
+  font-size: 1.0rem;
+  font-weight: 500;
+}
+
+/* 削除対象のコマンド名とURL/パス用 */
+.confirm-detail {
+  margin: 0 0 24px 0;
+  color: #aaaaaa; /* グレーっぽい色 */
+  font-size: 0.2rem; /* 少し小さく */
+  white-space: nowrap;
+}
+
+/* ターゲット(URL/パス)の部分だけ、さらに色を暗くして区別する */
+.confirm-detail span {
+  margin-left: 8px;
+  color: #666666;
+}
+
+/* Deleteボタンのデザイン */
+.delete-confirm-btn {
+  background-color: #ad2020; 
+  color: #ffffff;
+}
+
+.delete-confirm-btn:hover {
+  background-color: #7c0b0b;
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(255, 100, 100, 0.4);
+}
+
+/* ポップアップの中のボタングループだけを中央寄せにする */
+.confirm-box .button-group {
+  justify-content: center;
+  margin-top: 20px; /* ついでに上の文字との余白も少し広げて整えます */
+}
+
 /* エラーポップアップ */
 .error-popup {
   position: fixed;
