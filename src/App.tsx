@@ -387,6 +387,7 @@ function App() {
                 {results.slice(0, 20).map((app, index) => (
                   <li key={index}
                     onClick={() => launchApp(app)}
+                    onMouseEnter={() => setSelectedIndex(index)}
                     className={`suggest-item ${index === selectedIndex ? 'selected' : 'unselected'}`}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -394,29 +395,21 @@ function App() {
                       <span>{app.name.replace("🪟 ", "")}</span>
                     </div>
                     {app.isCustom && (
-                      <div style={{ display: 'flex', gap: '5px' }}>
-                        {/* ▼ 新しく追加した編集ボタン */}
+                      <div className="action-buttons">
                         <button
                           onClick={(e) => handleEdit(e, app)}
-                          className="edit-btn"
+                          className="action-btn"
                           title="Edit command"
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.2rem', padding: '0 8px' }}
                         >
-                          ✏️
+                          edit
                         </button>
+
                         <button
                           onClick={(e) => handleDelete(e, app)}
-                          className="delete-btn"
+                          className="action-btn"
                           title="Delete command"
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '1.2rem',
-                            padding: '0 8px'
-                          }}
                         >
-                          🗑️
+                          delete
                         </button>
                       </div>
                     )}

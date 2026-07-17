@@ -1,19 +1,24 @@
 body {
   margin: 0;
   overflow: hidden;
+  background-color: transparent;
 }
 
 /* サジェストリスト用の細いスクロールバー */
 .suggest-list::-webkit-scrollbar {
-  width: 4px; /* 通常の約半分の細さ */
+  width: 4px;
+  /* 通常の約半分の細さ */
 }
+
 .suggest-list::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .suggest-list::-webkit-scrollbar-thumb {
   background: #666;
   border-radius: 2px;
 }
+
 .suggest-list::-webkit-scrollbar-thumb:hover {
   background: #888;
 }
@@ -22,17 +27,20 @@ body {
   padding: 20px;
   padding-bottom: 5px;
   padding-top: 10px;
-  background: #202020;
   height: 100vh;
   box-sizing: border-box;
   overflow: hidden;
+  background: rgba(32, 32, 32, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.6);
 }
 
 .launcher-wrapper {
   display: flex;
   flex-direction: column;
-  height: 100%; /* 親のmainの中で最大まで使う */
-  overflow: hidden; /* 中身がはみ出ないように制限 */
+  height: 100%;
+  /* 親のmainの中で最大まで使う */
+  overflow: hidden;
+  /* 中身がはみ出ないように制限 */
 }
 
 .search-input {
@@ -48,8 +56,9 @@ body {
   outline: none;
   background: #2a2a2a;
   color: #999;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 }
+
 .search-input::placeholder {
   font-weight: lighter;
   font-size: 17px;
@@ -69,7 +78,7 @@ body {
   flex: 1;
   max-height: 400px;
   overflow-y: auto;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   width: 100%;
   box-sizing: border-box;
 }
@@ -91,6 +100,7 @@ body {
   color: #ffffff;
 }
 
+
 .suggest-item.unselected {
   background: transparent;
   color: #aaaaaa;
@@ -99,7 +109,8 @@ body {
 .add-command-container {
   display: flex;
   flex-direction: column;
-  gap: 12px; /* 各要素の間の余白 */
+  gap: 12px;
+  /* 各要素の間の余白 */
   padding: 24px;
   background-color: #1a1a1a;
   border-radius: 12px;
@@ -121,7 +132,8 @@ body {
 
 .input-group label {
   font-size: 0.85rem;
-  color: #888888; /* 控えめなラベル色 */
+  color: #888888;
+  /* 控えめなラベル色 */
   margin-left: 4px;
 }
 
@@ -133,7 +145,8 @@ body {
   color: #eeeeee;
   font-size: 1rem;
   outline: none;
-  transition: all 0.2s ease; /* アニメーションを滑らかに */
+  transition: all 0.2s ease;
+  /* アニメーションを滑らかに */
 }
 
 .add-command-input:focus {
@@ -144,7 +157,8 @@ body {
 
 .button-group {
   display: flex;
-  justify-content: flex-end; /* 右寄せ */
+  justify-content: flex-end;
+  /* 右寄せ */
   gap: 12px;
   margin-top: 4px;
 }
@@ -157,7 +171,7 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
   /* 通常時は少し落ち着いた白文字 */
-  color: #bbbbbb; 
+  color: #bbbbbb;
 }
 
 /* Cancelボタン（ベースは暗めの黒） */
@@ -172,9 +186,12 @@ body {
 
 /* ★ ホバー時のアニメーション（浮き上がり ＋ 文字が明るく発光） */
 .cmd-button:hover {
-  transform: translateY(-2px); /* 少し浮く */
-  color: #ffffff; /* 文字が真っ白に明るくなる */
-  text-shadow: 0 0 6px rgba(255, 255, 255, 0.4); /* 文字自体が光る */
+  transform: translateY(-2px);
+  /* 少し浮く */
+  color: #ffffff;
+  /* 文字が真っ白に明るくなる */
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+  /* 文字自体が光る */
 }
 
 .cancel-button:hover {
@@ -185,7 +202,8 @@ body {
 .save-button:hover {
   background-color: #3a3a3a;
   border-color: #777777;
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.05); /* Saveだけ全体もわずかに光る */
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.05);
+  /* Saveだけ全体もわずかに光る */
 }
 
 .badge {
@@ -194,10 +212,10 @@ body {
   justify-content: center;
   padding: 2px 8px;
   font-size: 11px;
-  font-weight: 600;
-  border-radius: 6px; /* りんの希望の角丸 */
+  border-radius: 6px;
   letter-spacing: 0.5px;
-  min-width: 36px; /* 幅を揃えてリストを縦に綺麗に揃える */
+  min-width: 36px;
+  /* 幅を揃えてリストを縦に綺麗に揃える */
 }
 
 /* 種類ごとの色分け (ダークテーマに合う色合い) */
@@ -207,22 +225,63 @@ body {
   border: 1px solid #404040;
 }
 
-.badge-url {
-  background-color: #1a2b3c;
-  color: #66b3ff;
-  border: 1px solid #264059;
+.badge-url,
+.badge-app {
+  background-color: #333333; 
+  color: #ffffff; 
+  border: 1px solid #444444;
 }
 
 .badge-win {
-  background-color: #1a3c28;
-  color: #66ff99;
-  border: 1px solid #26593b;
+  background-color: #474646; /* APPより一段階明るいグレー */
+  color: #25ed06; 
+  border: 1px solid #25ed06;
 }
 
-.badge-app {
-  background-color: #3c1a1a;
-  color: #ff6666;
-  border: 1px solid #592626;
+/* ボタンを包むコンテナ（普段は透明にしてクリックも無効にする） */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  /* 透明 */
+  pointer-events: none;
+  /* マウスイベントを無視 */
+  transition: opacity 0.2s ease-in-out;
+  /* 0.2秒かけてふわっと変化させる */
+  margin-left: auto;
+}
+
+/* 親要素（suggest-item）にマウスが乗った時だけ、ボタンを表示する */
+.suggest-item:hover .action-buttons {
+  opacity: 1;
+  /* はっきり表示 */
+  pointer-events: auto;
+  /* クリック可能にする */
+}
+
+
+/* --- ボタン自体のデザイン（白文字・白枠線） --- */
+
+.action-btn {
+  background: transparent;
+  /* 背景は透明 */
+  color: #b7b1b1;
+  /* 白文字 */
+  border: 1px solid #b7b1b1;
+  /* 白い1pxの枠線 */
+  border-radius: 20px;
+  /* 少しだけ角を丸くする（0にすると完全な四角） */
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  /* 少し小さめの文字 */
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+/* ボタン自体にマウスが乗った時は、少しだけ背景を白く光らせる */
+.action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.15);
 }
 
 /* エラーポップアップ */
@@ -235,7 +294,7 @@ body {
   padding: 10px 20px;
   border-radius: 8px;
   font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 9999;
 }
 
