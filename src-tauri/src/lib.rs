@@ -9,7 +9,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, SetForegroundWindow, ShowWindow,
     SW_RESTORE, IsIconic
 };
-use tauri::Manager;
 
 // Data structure
 #[derive(Serialize, Deserialize, Clone)]
@@ -171,7 +170,7 @@ fn save_command(name: String, target: String, description: Option<String>) -> Re
 }
 
 #[tauri::command]
-fn delete_command(app_handle: tauri::AppHandle, name: String) -> Result<(), String> {
+fn delete_command(name: String) -> Result<(), String> {
     let config_path = "config.json";
     
     let mut config: Config = match std::fs::read_to_string(config_path) {
@@ -180,6 +179,32 @@ fn delete_command(app_handle: tauri::AppHandle, name: String) -> Result<(), Stri
     };
 
     config.custom_apps.retain(|app| app.name != name);
+
+    // 3. 上書き保存する
+    let new_content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    std::fs::write(config_path, new_content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn edit_command(old_name: String, new_name: String, new_target: String, new_description: Option<String>) -> Result<(), String> {
+    let config_path = "config.json";
+
+    // 1. 現在のデータを読み込む
+    let mut config: Config = match std::fs::read_to_string(config_path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or(Config { custom_apps: vec![] }),
+        Err(_) => return Err("設定ファイルが見つかりません".to_string()),
+    };
+
+    // 2. old_name と一致するものを探して、中身を書き換える
+    if let Some(app) = config.custom_apps.iter_mut().find(|a| a.name == old_name) {
+        app.name = new_name;
+        app.target = new_target;
+        app.description = new_description;
+    } else {
+        return Err("編集対象のコマンドが見つかりません".to_string());
+    }
 
     // 3. 上書き保存する
     let new_content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
@@ -198,7 +223,8 @@ pub fn run() {
             scan_apps, 
             get_open_windows, 
             save_command, 
-            delete_command
+            delete_command,
+            edit_command
             ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

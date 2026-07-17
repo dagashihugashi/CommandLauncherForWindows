@@ -29,6 +29,7 @@ function App() {
   const errorTimeoutRef = React.useRef<number | null>(null);
   const listRef = React.useRef<HTMLUListElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [editingOldName, setEditingOldName] = useState<string | null>(null);
 
   // useEffectを使って、selectedIndexが変わるたびにスクロールさせる
   useEffect(() => {
@@ -266,23 +267,42 @@ function App() {
 
 
   const handleSaveCommand = async () => {
-    // 空欄なら保存しない
     if (!newApp.name || !newApp.target) {
       showError("Name and Target are required");
       return;
     }
 
     try {
-      await invoke("save_command", {
-        name: newApp.name,
-        target: newApp.target,
-        description: newApp.description || null
-      });
-      setAppList(prev => [...prev, { ...newApp, isCustom: true }]);
+      if (editingOldName) {
+        // ▼ 編集モードの場合（Rustの edit_command を呼ぶ）
+        // ※ TauriはJavaScriptのキャメルケースを自動でRustのスネークケースに変換してくれます
+        await invoke("edit_command", {
+          oldName: editingOldName,
+          newName: newApp.name,
+          newTarget: newApp.target,
+          newDescription: newApp.description || null
+        });
+
+        // リストの該当箇所だけを新しいデータに置き換える
+        setAppList(prev => prev.map(item =>
+          item.name === editingOldName ? { ...newApp, isCustom: true } : item
+        ));
+      } else {
+        // ▼ 新規追加モードの場合（元の処理）
+        await invoke("save_command", {
+          name: newApp.name,
+          target: newApp.target,
+          description: newApp.description || null
+        });
+        setAppList(prev => [...prev, { ...newApp, isCustom: true }]);
+      }
+
+      // ▼ 共通の入力リセット処理
       setMode('search');
       setNewApp({ name: '', target: '', description: '' });
+      setEditingOldName(null); // 記憶をリセット
     } catch (e) {
-      showError("Failed to save command");
+      showError(editingOldName ? "Failed to edit command" : "Failed to save command");
     }
   };
 
@@ -314,6 +334,20 @@ function App() {
     }
   };
 
+  const handleEdit = (e: React.MouseEvent, appToEdit: AppItem) => {
+    e.stopPropagation(); // アプリ起動を止める
+
+    // 既存のデータを入力欄（newApp）にセットする
+    setNewApp({
+      name: appToEdit.name,
+      target: appToEdit.target,
+      description: appToEdit.description || ''
+    });
+
+    setEditingOldName(appToEdit.name); // 変更前の名前を記憶
+    setMode('add-command'); // 画面を入力モードに切り替え
+  };
+
 
   return (
     <main className="main-container">
@@ -342,20 +376,31 @@ function App() {
                       <span>{app.name.replace("🪟 ", "")}</span>
                     </div>
                     {app.isCustom && (
-                      <button
-                        onClick={(e) => handleDelete(e, app)}
-                        className="delete-btn"
-                        title="Delete command"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '1.2rem',
-                          padding: '0 8px'
-                        }}
-                      >
-                        🗑️
-                      </button>
+                      <div style={{ display: 'flex', gap: '5px' }}>
+                        {/* ▼ 新しく追加した編集ボタン */}
+                        <button
+                          onClick={(e) => handleEdit(e, app)}
+                          className="edit-btn"
+                          title="Edit command"
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.2rem', padding: '0 8px' }}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={(e) => handleDelete(e, app)}
+                          className="delete-btn"
+                          title="Delete command"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '1.2rem',
+                            padding: '0 8px'
+                          }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     )}
                   </li>
                 ))}
@@ -364,7 +409,7 @@ function App() {
           </>
         ) : (
           <div className="add-command-container">
-            <h2>Add New Command</h2>
+            <h2>{editingOldName ? "Edit Command" : "Add New Command"}</h2>
 
             <div className="input-group">
               <label>Name</label>
@@ -406,6 +451,7 @@ function App() {
                 onClick={() => {
                   setMode('search');
                   setNewApp({ name: '', target: '', description: '' });
+                  setEditingOldName(null);
                 }}
               >
                 Cancel
