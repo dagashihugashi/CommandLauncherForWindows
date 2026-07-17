@@ -9,6 +9,7 @@ interface AppItem {
   name: string;
   target: string;
   description?: string;
+  isCustom?: boolean;
 }
 
 const ADD_COMMAND: AppItem = {
@@ -28,6 +29,9 @@ function App() {
   const errorTimeoutRef = React.useRef<number | null>(null);
   const listRef = React.useRef<HTMLUListElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [editingOldName, setEditingOldName] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const successTimeoutRef = React.useRef<number | null>(null);
 
   // useEffectを使って、selectedIndexが変わるたびにスクロールさせる
   useEffect(() => {
@@ -44,15 +48,27 @@ function App() {
 
   const showError = (message: string) => {
     setErrorMsg(message);
-    
+
     // 前のタイマーが残っていたらリセットする
     if (errorTimeoutRef.current) {
       clearTimeout(errorTimeoutRef.current);
     }
-    
+
     // 新しいタイマーをセット (window.setTimeout と書くとブラウザの関数だと明示できて安全です)
     errorTimeoutRef.current = window.setTimeout(() => {
       setErrorMsg(null);
+    }, 3000);
+  };
+
+  const showSuccess = (message: string) => {
+    setSuccessMsg(message);
+
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+    }
+
+    successTimeoutRef.current = window.setTimeout(() => {
+      setSuccessMsg(null);
     }, 3000);
   };
 
@@ -108,7 +124,7 @@ function App() {
         try {
           windows = await invoke("get_open_windows");
           setOpenWindows(windows);
-        } catch (e) { 
+        } catch (e) {
           console.warn("Failed to get windows:", e);
         }
 
@@ -116,15 +132,20 @@ function App() {
         try {
           const jsonString: string = await invoke("load_config");
           const data = JSON.parse(jsonString);
-          if (data.custom_apps) customApps = data.custom_apps;
-        } catch (e) { 
+          if (data.custom_apps) {
+            customApps = data.custom_apps.map((app: AppItem) => ({
+              ...app,
+              isCustom: true
+            }));
+          }
+        } catch (e) {
           console.warn("Failed to load config:", e);
         }
 
         let scannedApps: AppItem[] = [];
         try {
           scannedApps = await invoke("scan_apps");
-        } catch (e) { 
+        } catch (e) {
           console.warn("Failed to load config:", e);
         }
 
@@ -180,8 +201,8 @@ function App() {
           setMode('search');
           setNewApp({ name: '', target: '', description: '' });
         } else {
-        // mode が 'search' の場合は何もしない（＝そのまま上位に伝わってアプリが閉じる）
-        await appWindow.hide();
+          // mode が 'search' の場合は何もしない（＝そのまま上位に伝わってアプリが閉じる）
+          await appWindow.hide();
         }
       }
     };
@@ -258,24 +279,46 @@ function App() {
     }
   };
 
+
   const handleSaveCommand = async () => {
-    // 空欄なら保存しない
     if (!newApp.name || !newApp.target) {
       showError("Name and Target are required");
       return;
     }
 
     try {
-      await invoke("save_command", { 
-        name: newApp.name, 
-        target: newApp.target, 
-        description: newApp.description || null 
-      });
-      setAppList(prev => [...prev, newApp]);
-      setMode('search'); 
-      setNewApp({ name: '', target: '', description: '' }); 
+      if (editingOldName) {
+        // ▼ 編集モードの場合（Rustの edit_command を呼ぶ）
+        // ※ TauriはJavaScriptのキャメルケースを自動でRustのスネークケースに変換してくれます
+        await invoke("edit_command", {
+          oldName: editingOldName,
+          newName: newApp.name,
+          newTarget: newApp.target,
+          newDescription: newApp.description || null
+        });
+
+        // リストの該当箇所だけを新しいデータに置き換える
+        setAppList(prev => prev.map(item =>
+          item.name === editingOldName ? { ...newApp, isCustom: true } : item
+        ));
+      } else {
+        // ▼ 新規追加モードの場合（元の処理）
+        await invoke("save_command", {
+          name: newApp.name,
+          target: newApp.target,
+          description: newApp.description || null
+        });
+        setAppList(prev => [...prev, { ...newApp, isCustom: true }]);
+      }
+
+      showSuccess(editingOldName ? "Command edited!" : "Command added!");
+
+      // ▼ 共通の入力リセット処理
+      setMode('search');
+      setNewApp({ name: '', target: '', description: '' });
+      setEditingOldName(null); // 記憶をリセット
     } catch (e) {
-      showError("Failed to save command");
+      showError(editingOldName ? "Failed to edit command" : "Failed to save command");
     }
   };
 
@@ -284,6 +327,43 @@ function App() {
       e.preventDefault();
       handleSaveCommand();
     }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, appToDelete: AppItem) => {
+    e.stopPropagation(); // 親要素のクリックイベント（アプリ起動）を防ぐ
+
+    if (!window.confirm(`「${appToDelete.name}」を削除してもよろしいですか？`)) return;
+
+    try {
+      // 1. Rustに削除を依頼
+      await invoke("delete_command", { name: appToDelete.name });
+
+      // 2. Reactの画面上から即座に消す（appListとresultsの両方からフィルタリング）
+      setAppList(prev => prev.filter(item => item.name !== appToDelete.name));
+      setResults(prev => prev.filter(item => item.name !== appToDelete.name));
+
+      // 3. 選択位置のズレを防ぐ
+      setSelectedIndex(0);
+
+      showSuccess("Command deleted!");
+    } catch (error) {
+      console.error("削除エラー:", error);
+      showError("Failed to delete command");
+    }
+  };
+
+  const handleEdit = (e: React.MouseEvent, appToEdit: AppItem) => {
+    e.stopPropagation(); // アプリ起動を止める
+
+    // 既存のデータを入力欄（newApp）にセットする
+    setNewApp({
+      name: appToEdit.name,
+      target: appToEdit.target,
+      description: appToEdit.description || ''
+    });
+
+    setEditingOldName(appToEdit.name); // 変更前の名前を記憶
+    setMode('add-command'); // 画面を入力モードに切り替え
   };
 
 
@@ -307,10 +387,32 @@ function App() {
                 {results.slice(0, 20).map((app, index) => (
                   <li key={index}
                     onClick={() => launchApp(app)}
+                    onMouseEnter={() => setSelectedIndex(index)}
                     className={`suggest-item ${index === selectedIndex ? 'selected' : 'unselected'}`}
                   >
-                    {getBadge(app.target)}
-                    <span>{app.name.replace("🪟 ", "")}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {getBadge(app.target)}
+                      <span>{app.name.replace("🪟 ", "")}</span>
+                    </div>
+                    {app.isCustom && (
+                      <div className="action-buttons">
+                        <button
+                          onClick={(e) => handleEdit(e, app)}
+                          className="action-btn"
+                          title="Edit command"
+                        >
+                          edit
+                        </button>
+
+                        <button
+                          onClick={(e) => handleDelete(e, app)}
+                          className="action-btn"
+                          title="Delete command"
+                        >
+                          delete
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -318,55 +420,56 @@ function App() {
           </>
         ) : (
           <div className="add-command-container">
-            <h2>Add New Command</h2>
-            
+            <h2>{editingOldName ? "Edit Command" : "Add New Command"}</h2>
+
             <div className="input-group">
               <label>Name</label>
-              <input 
-                className="add-command-input" 
-                placeholder="e.g., My App" 
-                value={newApp.name} 
-                onChange={e => setNewApp({ ...newApp, name: e.target.value })} 
+              <input
+                className="add-command-input"
+                placeholder="e.g., My App"
+                value={newApp.name}
+                onChange={e => setNewApp({ ...newApp, name: e.target.value })}
                 onKeyDown={handleAddCommandKeyDown}
                 autoFocus
               />
             </div>
-            
+
             <div className="input-group">
               <label>Target (URL or Path)</label>
-              <input 
-                className="add-command-input" 
-                placeholder="e.g., https://... or C:\..." 
-                value={newApp.target} 
-                onChange={e => setNewApp({ ...newApp, target: e.target.value })} 
+              <input
+                className="add-command-input"
+                placeholder="e.g., https://... or C:\..."
+                value={newApp.target}
+                onChange={e => setNewApp({ ...newApp, target: e.target.value })}
                 onKeyDown={handleAddCommandKeyDown}
               />
             </div>
-            
+
             <div className="input-group">
               <label>Description (Optional)</label>
-              <input 
-                className="add-command-input" 
-                placeholder="What does this do?" 
-                value={newApp.description} 
-                onChange={e => setNewApp({ ...newApp, description: e.target.value })} 
+              <input
+                className="add-command-input"
+                placeholder="What does this do?"
+                value={newApp.description}
+                onChange={e => setNewApp({ ...newApp, description: e.target.value })}
                 onKeyDown={handleAddCommandKeyDown}
               />
             </div>
 
             <div className="button-group">
-              <button 
-                className="cmd-button cancel-button" 
+              <button
+                className="cmd-button cancel-button"
                 onClick={() => {
                   setMode('search');
                   setNewApp({ name: '', target: '', description: '' });
+                  setEditingOldName(null);
                 }}
               >
                 Cancel
               </button>
-              
-              <button 
-                className="cmd-button save-button" 
+
+              <button
+                className="cmd-button save-button"
                 onClick={handleSaveCommand}
               >
                 Save
@@ -375,7 +478,8 @@ function App() {
           </div>
         )}
       </div>
-      {errorMsg && <div className="error-popup">{errorMsg}</div>}
+      {errorMsg && <div className="error-popup">✖  {errorMsg}</div>}
+      {successMsg && <div className="success-popup">✔  {successMsg}</div>}
     </main>
   );
 }
