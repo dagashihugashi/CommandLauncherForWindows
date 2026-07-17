@@ -231,10 +231,23 @@ body {
   bottom: 20px;
   right: 20px;
   background: rgba(202, 68, 68, 0.95);
-  color: white;
+  color: rgb(21, 20, 20);
   padding: 10px 20px;
   border-radius: 8px;
   font-size: 14px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 9999;
+}
+
+.success-popup {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: rgba(6, 188, 94, 0.95);
+  color: #000705;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 9999;
 }

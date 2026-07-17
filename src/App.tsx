@@ -30,6 +30,8 @@ function App() {
   const listRef = React.useRef<HTMLUListElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editingOldName, setEditingOldName] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const successTimeoutRef = React.useRef<number | null>(null);
 
   // useEffectを使って、selectedIndexが変わるたびにスクロールさせる
   useEffect(() => {
@@ -55,6 +57,18 @@ function App() {
     // 新しいタイマーをセット (window.setTimeout と書くとブラウザの関数だと明示できて安全です)
     errorTimeoutRef.current = window.setTimeout(() => {
       setErrorMsg(null);
+    }, 3000);
+  };
+
+  const showSuccess = (message: string) => {
+    setSuccessMsg(message);
+
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+    }
+
+    successTimeoutRef.current = window.setTimeout(() => {
+      setSuccessMsg(null);
     }, 3000);
   };
 
@@ -297,6 +311,8 @@ function App() {
         setAppList(prev => [...prev, { ...newApp, isCustom: true }]);
       }
 
+      showSuccess(editingOldName ? "Command edited!" : "Command added!");
+
       // ▼ 共通の入力リセット処理
       setMode('search');
       setNewApp({ name: '', target: '', description: '' });
@@ -328,6 +344,8 @@ function App() {
 
       // 3. 選択位置のズレを防ぐ
       setSelectedIndex(0);
+
+      showSuccess("Command deleted!");
     } catch (error) {
       console.error("削除エラー:", error);
       showError("Failed to delete command");
@@ -467,7 +485,8 @@ function App() {
           </div>
         )}
       </div>
-      {errorMsg && <div className="error-popup">{errorMsg}</div>}
+      {errorMsg && <div className="error-popup">✖  {errorMsg}</div>}
+      {successMsg && <div className="success-popup">✔  {successMsg}</div>}
     </main>
   );
 }
