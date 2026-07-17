@@ -170,13 +170,36 @@ fn save_command(name: String, target: String, description: Option<String>) -> Re
     Ok(())
 }
 
+#[tauri::command]
+fn delete_command(app_handle: tauri::AppHandle, name: String) -> Result<(), String> {
+    let config_path = "config.json";
+    
+    let mut config: Config = match std::fs::read_to_string(config_path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or(Config { custom_apps: vec![] }),
+        Err(_) => return Err("設定ファイルが見つかりません".to_string()),
+    };
+
+    config.custom_apps.retain(|app| app.name != name);
+
+    // 3. 上書き保存する
+    let new_content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    std::fs::write(config_path, new_content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_target, load_config, scan_apps, get_open_windows, save_command])
+        .invoke_handler(tauri::generate_handler![open_target, 
+            load_config, 
+            scan_apps, 
+            get_open_windows, 
+            save_command, 
+            delete_command
+            ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

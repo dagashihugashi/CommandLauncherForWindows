@@ -1,7 +1,7 @@
 {
   "custom_apps": [
     {
-      "name": "YouTube",
+      "name": "youtube",
       "target": "https://youtube.com",
       "description": null
     }
