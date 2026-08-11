@@ -1,7 +1,17 @@
+/* /settings から変更できる値。JS側でdocument.documentElementに上書きする */
+:root {
+  --wm-bg-rgba: rgba(0, 0, 0, 0.95);
+  --wm-text-color: #dddddd;
+  --wm-alert-color: #ff5c5c;
+  --wm-success-color: rgba(6, 188, 94, 0.95);
+  --wm-error-color: rgba(202, 68, 68, 0.95);
+}
+
 body {
   margin: 0;
   overflow: hidden;
   background-color: transparent;
+  font-family: Consolas, "Courier New", monospace;
 }
 
 /* サジェストリスト用の細いスクロールバー */
@@ -30,7 +40,7 @@ body {
   height: 100vh;
   box-sizing: border-box;
   overflow: hidden;
-  background: rgba(32, 32, 32, 0.95);
+  background: var(--wm-bg-rgba);
   border: 1px solid rgba(0, 0, 0, 0.6);
 }
 
@@ -43,20 +53,48 @@ body {
   /* 中身がはみ出ないように制限 */
 }
 
-.search-input {
-  flex-shrink: 0;
-  width: 100%;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  margin-left: 20px;
-  margin-right: 20px;
+.search-prompt {
   font-size: 20px;
-  border-radius: 5px;
+  color: #777777;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* 通常検索・クエリ検索モード・システムコマンド確認、すべてこの1行(.search-bar-line)を
+   1つ以上積み重ねた形で統一する。行の高さを揃えることで、行数が増減しても
+   一番上の行の位置がズレないようにする */
+.search-bar-stack {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #444444; /* 枠の代わりのガイド線 */
+}
+
+.search-bar-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.search-history-text {
+  font-size: 20px;
+  color: var(--wm-text-color);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 20px;
   border: none;
   outline: none;
-  background: #2a2a2a;
-  color: #999;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--wm-text-color);
+  box-shadow: none;
 }
 
 .search-input::placeholder {
@@ -66,19 +104,21 @@ body {
   color: #666;
 }
 
+.search-input.error::placeholder {
+  color: var(--wm-alert-color);
+  font-weight: normal;
+  font-style: normal;
+}
+
 .suggest-list {
   list-style: none;
-  padding: 8px;
+  padding: 4px 0;
   margin: 0;
   margin-top: 10px;
   margin-bottom: 10px;
-  margin-left: 20px;
-  background: #2a2a2a;
-  border-radius: 10px;
   flex: 1;
   max-height: 400px;
   overflow-y: auto;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   width: 100%;
   box-sizing: border-box;
 }
@@ -87,16 +127,20 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 16px;
-  margin: 2px 0;
-  border-radius: 6px;
+  padding: 8px 4px 8px 8px;
   font-size: 15px;
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: border-color 0.1s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15); /* ボックスの代わりの仕切り線 */
+  border-left: 3px solid transparent; /* selected時にラインが出てもガタつかないよう常に確保 */
+}
+
+.suggest-item:last-child {
+  border-bottom: none;
 }
 
 .suggest-item.selected {
-  background: #404040;
+  border-left-color: #ffffff;
   color: #ffffff;
 }
 
@@ -106,53 +150,88 @@ body {
   color: #aaaaaa;
 }
 
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  text-align: center;
+  color: #777777;
+  font-size: 0.9rem;
+}
+
 .add-command-container {
   display: flex;
   flex-direction: column;
   gap: 12px;
   /* 各要素の間の余白 */
-  padding: 24px;
-  background-color: #1a1a1a;
-  border-radius: 12px;
+  padding: 4px 0;
   box-sizing: border-box;
 }
 
-.add-command-container h2 {
-  margin: 0;
-  color: #ffffff;
-  font-size: 1.4rem;
-  font-weight: 500;
-}
-
-.input-group {
+.terminal-line {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--wm-text-color);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
-.input-group label {
-  font-size: 0.85rem;
-  color: #888888;
-  /* 控えめなラベル色 */
-  margin-left: 4px;
+.terminal-label {
+  color: #777777;
+  white-space: nowrap;
 }
 
-.add-command-input {
-  padding: 12px 16px;
-  border-radius: 8px;
-  border: 1px solid #333333;
-  background-color: #121212;
-  color: #eeeeee;
-  font-size: 1rem;
+.terminal-answer {
+  color: var(--wm-text-color);
+}
+
+.terminal-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
   outline: none;
-  transition: all 0.2s ease;
-  /* アニメーションを滑らかに */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--wm-text-color);
+  font-family: inherit;
+  font-size: 15px;
 }
 
-.add-command-input:focus {
-  border-color: #666666;
-  /* 白に近い淡い光を放つ */
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+.terminal-input::placeholder {
+  color: #666666;
+  font-style: italic;
+}
+
+.terminal-input.error::placeholder {
+  color: var(--wm-alert-color);
+  font-style: normal;
+}
+
+.terminal-error-text {
+  color: var(--wm-alert-color);
+  font-size: 0.8rem;
+  margin-top: -4px;
+}
+
+.terminal-hint {
+  margin-top: 16px;
+  font-size: 0.75rem;
+  color: #555555;
+}
+
+.settings-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
 }
 
 .button-group {
@@ -167,6 +246,7 @@ body {
   padding: 10px 24px;
   border-radius: 8px;
   border: 1px solid #333333;
+  font-family: inherit;
   font-size: 0.95rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -206,6 +286,13 @@ body {
   /* Saveだけ全体もわずかに光る */
 }
 
+.app-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -234,8 +321,14 @@ body {
 
 .badge-win {
   background-color: #474646; /* APPより一段階明るいグレー */
-  color: #25ed06; 
+  color: #25ed06;
   border: 1px solid #25ed06;
+}
+
+.badge-sys {
+  background-color: #3a2a1a;
+  color: #ffa64d; /* 電源操作なので警戒色寄りに */
+  border: 1px solid #ffa64d;
 }
 
 /* ボタンを包むコンテナ（普段は透明にしてクリックも無効にする） */
@@ -331,7 +424,7 @@ body {
 .confirm-detail {
   margin: 0 0 24px 0;
   color: #aaaaaa; /* グレーっぽい色 */
-  font-size: 0.2rem; /* 少し小さく */
+  font-size: 0.9rem; /* 少し小さく */
   white-space: nowrap;
 }
 
@@ -364,7 +457,7 @@ body {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background: rgba(202, 68, 68, 0.95);
+  background: var(--wm-error-color);
   color: rgb(21, 20, 20);
   padding: 10px 20px;
   border-radius: 8px;
@@ -377,7 +470,7 @@ body {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background-color: rgba(6, 188, 94, 0.95);
+  background-color: var(--wm-success-color);
   color: #000705;
   padding: 10px 20px;
   border-radius: 8px;
