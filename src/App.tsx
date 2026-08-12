@@ -25,6 +25,8 @@ interface AppSettings {
   backgroundColor: string;
   opacity: number;
   textColor: string;
+  labelColor: string;
+  highlightColor: string;
   alertColor: string;
   successColor: string;
   errorColor: string;
@@ -35,17 +37,21 @@ const DEFAULT_SETTINGS: AppSettings = {
   backgroundColor: "#000000",
   opacity: 0.95,
   textColor: "#dddddd",
+  labelColor: "#777777",
+  highlightColor: "#ffffff",
   alertColor: "#ff5c5c",
   successColor: "#06bc5e",
   errorColor: "#ca4444",
   hotkey: "Alt+Space",
 };
 
-// /settings の会話で1問ずつ聞いていく質問リスト
+// /settings の画面に並べる設定項目リスト
 const SETTINGS_STEPS: { key: keyof AppSettings; label: string; kind: 'color' | 'opacity' | 'hotkey' }[] = [
   { key: 'backgroundColor', label: 'Background color (#rrggbb)', kind: 'color' },
   { key: 'opacity', label: 'Window opacity (0.1-1.0)', kind: 'opacity' },
   { key: 'textColor', label: 'Text color (#rrggbb)', kind: 'color' },
+  { key: 'labelColor', label: 'Label/prompt text color (#rrggbb)', kind: 'color' },
+  { key: 'highlightColor', label: 'Selected suggestion highlight color (#rrggbb)', kind: 'color' },
   { key: 'alertColor', label: 'Alert text color (#rrggbb)', kind: 'color' },
   { key: 'successColor', label: 'Success popup color (#rrggbb)', kind: 'color' },
   { key: 'errorColor', label: 'Error popup color (#rrggbb)', kind: 'color' },
@@ -87,7 +93,12 @@ const DEFAULT_QUERY_ENGINES: Record<string, string> = {
 // 無ければ「target = 普通に開くURL、queryModeで検索対応」というシームレスな設定を実現するため
 // 末尾に ?q= (または &q=) として自動付加する
 function buildQueryUrl(template: string, query: string): string {
-  const encoded = encodeURIComponent(query);
+  const trimmed = query.trim();
+  // 引数なしの場合：{query}プレースホルダーは取り除いて素のURLのまま開く
+  // （queryModeの自動付加パターンならtemplateにそもそも{query}が無いので、そのまま無加工で開かれる）
+  if (!trimmed) return template.replace("{query}", "");
+
+  const encoded = encodeURIComponent(trimmed);
   if (template.includes("{query}")) {
     return template.replace("{query}", encoded);
   }
@@ -137,12 +148,14 @@ function App() {
   const [newApp, setNewApp] = useState({ name: '', target: '', description: '', queryMode: '' });
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsDraft, setSettingsDraft] = useState<Record<keyof AppSettings, string>>({
-    backgroundColor: '', opacity: '', textColor: '', alertColor: '', successColor: '', errorColor: '', hotkey: ''
+    backgroundColor: '', opacity: '', textColor: '', labelColor: '', highlightColor: '', alertColor: '', successColor: '', errorColor: '', hotkey: ''
   });
-  const [settingsStep, setSettingsStep] = useState(0);
-  const [settingsStepError, setSettingsStepError] = useState<string | null>(null);
+  const [settingsStep, setSettingsStep] = useState(0); // 今フォーカスしているフィールドのインデックス（SETTINGS_STEPS.length-1に達すると確認行が現れる）
+  const [settingsFieldErrors, setSettingsFieldErrors] = useState<Partial<Record<keyof AppSettings, string>>>({});
   const [settingsConfirmInput, setSettingsConfirmInput] = useState('');
   const [settingsConfirmError, setSettingsConfirmError] = useState(false);
+  const settingsInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+  const settingsConfirmInputRef = React.useRef<HTMLInputElement | null>(null);
   const errorTimeoutRef = React.useRef<number | null>(null);
   const listRef = React.useRef<HTMLUListElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -160,7 +173,6 @@ function App() {
   const [confirmError, setConfirmError] = useState(false);
   const [queryEngine, setQueryEngine] = useState<QueryEngine | null>(null); // "g react" のようなクエリ検索モードに入っているか
   const [queryArg, setQueryArg] = useState(''); // クエリ検索モード中の、キーワードより後ろの入力
-  const [queryArgError, setQueryArgError] = useState(false); // クエリが空のままEnterされた
   const [iconMap, setIconMap] = useState<Record<string, string>>({});
   const pendingIconsRef = React.useRef<Set<string>>(new Set());
   const [usageMap, setUsageMap] = useState<Record<string, { count: number; last_used: number }>>({});
@@ -250,11 +262,11 @@ function App() {
     setConfirmError(false);
   };
 
-  // /settings の会話状態を初期化して検索画面に戻る（保存後・キャンセル共通）
+  // /settings の状態を初期化して検索画面に戻る（保存後・キャンセル共通）
   const resetSettingsFlow = () => {
     setMode('search');
     setSettingsStep(0);
-    setSettingsStepError(null);
+    setSettingsFieldErrors({});
     setSettingsConfirmInput('');
     setSettingsConfirmError(false);
   };
@@ -264,13 +276,15 @@ function App() {
       backgroundColor: settings.backgroundColor,
       opacity: String(settings.opacity),
       textColor: settings.textColor,
+      labelColor: settings.labelColor,
+      highlightColor: settings.highlightColor,
       alertColor: settings.alertColor,
       successColor: settings.successColor,
       errorColor: settings.errorColor,
       hotkey: settings.hotkey,
     });
     setSettingsStep(0);
-    setSettingsStepError(null);
+    setSettingsFieldErrors({});
     setSettingsConfirmInput('');
     setSettingsConfirmError(false);
     setMode('settings');
@@ -278,8 +292,8 @@ function App() {
     setResults([]);
   };
 
-  // 設定1問分の値を検証する（色・opacityのみ。hotkeyは別途非同期で検証する）
-  const validateSettingsStep = (kind: 'color' | 'opacity' | 'hotkey', value: string): string | null => {
+  // 色・opacityの同期バリデーション（hotkeyは別途非同期で検証する）
+  const validateSettingsField = (kind: 'color' | 'opacity' | 'hotkey', value: string): string | null => {
     const trimmed = value.trim();
     if (!trimmed) return "necessary";
     if (kind === 'color' && !/^#[0-9a-fA-F]{6}$/.test(trimmed)) return "expected #rrggbb";
@@ -305,42 +319,85 @@ function App() {
     }
   };
 
-  const handleSettingsDraftChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const step = SETTINGS_STEPS[settingsStep];
-    setSettingsDraft(prev => ({ ...prev, [step.key]: e.target.value }));
-    setSettingsStepError(null);
-  };
-
-  const handleSettingsStepKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-
-    const step = SETTINGS_STEPS[settingsStep];
-    const value = settingsDraft[step.key];
-    const error = step.kind === 'hotkey' ? await validateHotkey(value) : validateSettingsStep(step.kind, value);
-    if (error) {
-      setSettingsStepError(error);
+  // 指定インデックスのフィールド（末尾を超えたら確認欄）にフォーカスを移す
+  const focusSettingsField = (index: number) => {
+    if (index < 0) return;
+    if (index >= SETTINGS_STEPS.length) {
+      settingsConfirmInputRef.current?.focus();
       return;
     }
-    setSettingsStepError(null);
-    setSettingsStep(prev => prev + 1);
+    settingsInputRefs.current[index]?.focus();
   };
 
+  const handleSettingsFieldChange = (index: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const step = SETTINGS_STEPS[index];
+    const value = e.target.value;
+    setSettingsDraft(prev => ({ ...prev, [step.key]: value }));
+    // hotkeyは打つたびに登録テストするのは重いので、変更中はエラー表示だけ消しておき、blur時に検証する
+    const error = step.kind === 'hotkey' ? null : validateSettingsField(step.kind, value);
+    setSettingsFieldErrors(prev => ({ ...prev, [step.key]: error ?? undefined }));
+  };
+
+  const handleSettingsFieldFocus = (index: number) => () => {
+    setSettingsStep(index);
+  };
+
+  const handleSettingsFieldBlur = (index: number) => async () => {
+    const step = SETTINGS_STEPS[index];
+    if (step.kind !== 'hotkey') return;
+    const error = await validateHotkey(settingsDraft[step.key]);
+    setSettingsFieldErrors(prev => ({ ...prev, [step.key]: error ?? undefined }));
+  };
+
+  const handleSettingsFieldKeyDown = (index: number) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" || e.key === "Enter") {
+      e.preventDefault();
+      focusSettingsField(index + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      focusSettingsField(index - 1);
+    }
+    // Tab / Shift+Tab はブラウザ標準のフォーカス移動に任せる（ここでは何もしない）
+  };
+
+  const buildSettingsFromDraft = (): AppSettings => ({
+    backgroundColor: settingsDraft.backgroundColor.trim(),
+    opacity: Number(settingsDraft.opacity.trim()),
+    textColor: settingsDraft.textColor.trim(),
+    labelColor: settingsDraft.labelColor.trim(),
+    highlightColor: settingsDraft.highlightColor.trim(),
+    alertColor: settingsDraft.alertColor.trim(),
+    successColor: settingsDraft.successColor.trim(),
+    errorColor: settingsDraft.errorColor.trim(),
+    hotkey: settingsDraft.hotkey.trim(),
+  });
+
   const handleSettingsConfirmKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      focusSettingsField(SETTINGS_STEPS.length - 1);
+      return;
+    }
     if (e.key !== "Enter") return;
     e.preventDefault();
 
     const answer = settingsConfirmInput.trim().toLowerCase();
     if (answer === "y" || answer === "yes") {
-      const newSettings: AppSettings = {
-        backgroundColor: settingsDraft.backgroundColor.trim(),
-        opacity: Number(settingsDraft.opacity.trim()),
-        textColor: settingsDraft.textColor.trim(),
-        alertColor: settingsDraft.alertColor.trim(),
-        successColor: settingsDraft.successColor.trim(),
-        errorColor: settingsDraft.errorColor.trim(),
-        hotkey: settingsDraft.hotkey.trim(),
-      };
+      // 保存前に全項目をあらためて検証する
+      const errors: Partial<Record<keyof AppSettings, string>> = {};
+      for (const step of SETTINGS_STEPS) {
+        const value = settingsDraft[step.key];
+        const error = step.kind === 'hotkey' ? await validateHotkey(value) : validateSettingsField(step.kind, value);
+        if (error) errors[step.key] = error;
+      }
+      if (Object.keys(errors).length > 0) {
+        setSettingsFieldErrors(errors);
+        const firstErrorIndex = SETTINGS_STEPS.findIndex(s => errors[s.key]);
+        if (firstErrorIndex >= 0) focusSettingsField(firstErrorIndex);
+        return;
+      }
+
+      const newSettings = buildSettingsFromDraft();
       try {
         await invoke("save_settings", { settings: newSettings });
         setSettings(newSettings);
@@ -463,11 +520,15 @@ function App() {
           }));
         }
         setUsageMap(data.usage || {});
-        if (data.settings) {
-          setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
-        }
       } catch (e) {
         console.warn("Failed to load config:", e);
+      }
+
+      try {
+        const settingsJson: string = await invoke("load_settings");
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settingsJson) });
+      } catch (e) {
+        console.warn("Failed to load settings:", e);
       }
 
       let scannedApps: AppItem[] = [];
@@ -493,6 +554,8 @@ function App() {
     const root = document.documentElement.style;
     root.setProperty('--wm-bg-rgba', hexToRgba(settings.backgroundColor, settings.opacity));
     root.setProperty('--wm-text-color', settings.textColor);
+    root.setProperty('--wm-label-color', settings.labelColor);
+    root.setProperty('--wm-highlight-color', settings.highlightColor);
     root.setProperty('--wm-alert-color', settings.alertColor);
     root.setProperty('--wm-success-color', hexToRgba(settings.successColor, 0.95));
     root.setProperty('--wm-error-color', hexToRgba(settings.errorColor, 0.95));
@@ -678,7 +741,6 @@ function App() {
 
   const handleQueryArgChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQueryArg(e.target.value);
-    setQueryArgError(false);
   };
 
   const handleQueryArgKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -692,14 +754,13 @@ function App() {
     if (e.key === "Enter") {
       e.preventDefault();
       if (!queryEngine) return;
-      if (!queryArg.trim()) {
-        setQueryArgError(true);
-        return;
-      }
-      const target = buildQueryUrl(queryEngine.urlTemplate, queryArg.trim());
+      // 引数が空でもエラーにはせず、素のURLをそのまま開く
+      const trimmedArg = queryArg.trim();
+      const target = buildQueryUrl(queryEngine.urlTemplate, trimmedArg);
+      const name = trimmedArg ? `${queryEngine.label}: ${trimmedArg}` : queryEngine.label;
       setQueryEngine(null);
       setQueryArg('');
-      await launchApp({ name: `${queryEngine.label}: ${queryArg.trim()}`, target });
+      await launchApp({ name, target });
     }
   };
 
@@ -816,6 +877,22 @@ function App() {
       e.preventDefault();
       // 上キー：一番上でなければ1つ上へ
       setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === "Tab") {
+      // LinuxシェルのようなTab補完。edit/deleteボタンにフォーカスが奪われないよう必ずpreventDefaultする
+      e.preventDefault();
+      if (results.length === 0) return;
+      const maxIndex = Math.min(results.length, 20) - 1;
+      const current = results[selectedIndex];
+      const displayName = (name: string) => name.replace("🪟 ", "");
+      if (current && query === displayName(current.name)) {
+        // 既にこの候補まで補完済みなら、次の候補へ進めて補完し直す（シェルのTabサイクルと同じ）
+        const nextIndex = selectedIndex < maxIndex ? selectedIndex + 1 : 0;
+        setSelectedIndex(nextIndex);
+        setQuery(displayName(results[nextIndex].name));
+      } else if (current) {
+        // まだ補完していなければ、今選択中の候補で補完する
+        setQuery(displayName(current.name));
+      }
     }
   };
 
@@ -966,13 +1043,12 @@ function App() {
                 <div className="search-bar-line">
                   <span className="search-prompt">[{queryEngine.label}]&gt;</span>
                   <input
-                    className={`search-input ${queryArgError ? 'error' : ''}`}
+                    className="search-input"
                     type="text"
                     autoFocus
                     value={queryArg}
                     onChange={handleQueryArgChange}
                     onKeyDown={handleQueryArgKeyDown}
-                    placeholder={queryArgError ? "Query is required" : ""}
                   />
                 </div>
               </div>
@@ -1041,6 +1117,7 @@ function App() {
                           onClick={(e) => handleEdit(e, app)}
                           className="action-btn"
                           title="Edit command"
+                          tabIndex={-1}
                         >
                           edit
                         </button>
@@ -1049,6 +1126,7 @@ function App() {
                           onClick={(e) => handleDelete(e, app)}
                           className="action-btn"
                           title="Delete command"
+                          tabIndex={-1}
                         >
                           delete
                         </button>
@@ -1123,57 +1201,54 @@ function App() {
               <span className="search-prompt">[WindowsManeuver]&gt;</span> settings
             </div>
 
-            {SETTINGS_STEPS.slice(0, settingsStep).map(step => (
-              <div className="terminal-line" key={step.key}>
-                <span className="terminal-label">{step.label}:</span>{" "}
-                <span className="terminal-answer">{settingsDraft[step.key]}</span>
-                {step.kind === 'color' && /^#[0-9a-fA-F]{6}$/.test(settingsDraft[step.key]) && (
-                  <span className="settings-swatch" style={{ backgroundColor: settingsDraft[step.key] }} />
-                )}
-              </div>
-            ))}
-
-            {settingsStep < SETTINGS_STEPS.length ? (
-              <>
-                <div className="terminal-line">
-                  <span className="terminal-label">{SETTINGS_STEPS[settingsStep].label}:</span>
-                  <input
-                    className={`terminal-input ${settingsStepError ? 'error' : ''}`}
-                    value={settingsDraft[SETTINGS_STEPS[settingsStep].key]}
-                    onChange={handleSettingsDraftChange}
-                    onKeyDown={handleSettingsStepKeyDown}
-                    autoFocus
-                  />
-                  {SETTINGS_STEPS[settingsStep].kind === 'color' &&
-                    /^#[0-9a-fA-F]{6}$/.test(settingsDraft[SETTINGS_STEPS[settingsStep].key]) && (
-                      <span
-                        className="settings-swatch"
-                        style={{ backgroundColor: settingsDraft[SETTINGS_STEPS[settingsStep].key] }}
+            <div className="wizard-scroll-area">
+              {SETTINGS_STEPS.map((step, index) => {
+                const error = settingsFieldErrors[step.key];
+                const value = settingsDraft[step.key];
+                const isColor = step.kind === 'color' && /^#[0-9a-fA-F]{6}$/.test(value);
+                return (
+                  <React.Fragment key={step.key}>
+                    <div className="terminal-line">
+                      <span className="terminal-label">{step.label}:</span>
+                      <input
+                        ref={el => { settingsInputRefs.current[index] = el; }}
+                        className={`terminal-input ${error ? 'error' : ''}`}
+                        value={value}
+                        onChange={handleSettingsFieldChange(index)}
+                        onKeyDown={handleSettingsFieldKeyDown(index)}
+                        onFocus={handleSettingsFieldFocus(index)}
+                        onBlur={handleSettingsFieldBlur(index)}
+                        autoFocus={index === 0}
                       />
-                    )}
-                </div>
-                {settingsStepError && (
-                  <div className="terminal-error-text">{settingsStepError}</div>
-                )}
-              </>
-            ) : (
-              <div className="terminal-line">
-                <span className="terminal-label">Save these settings? (y/n):</span>
-                <input
-                  className={`terminal-input ${settingsConfirmError ? 'error' : ''}`}
-                  value={settingsConfirmInput}
-                  onChange={e => {
-                    setSettingsConfirmInput(e.target.value);
-                    setSettingsConfirmError(false);
-                  }}
-                  onKeyDown={handleSettingsConfirmKeyDown}
-                  placeholder={settingsConfirmError ? "y or n" : ""}
-                  autoFocus
-                />
-              </div>
-            )}
+                      {isColor && (
+                        <span className="settings-swatch" style={{ backgroundColor: value }} />
+                      )}
+                    </div>
+                    {error && <div className="terminal-error-text">{error}</div>}
+                  </React.Fragment>
+                );
+              })}
 
-            <div className="terminal-hint">Esc or Ctrl+C to cancel and return to the home window</div>
+              {settingsStep >= SETTINGS_STEPS.length - 1 && (
+                <div className="terminal-line">
+                  <span className="terminal-label">Save these settings? (y/n):</span>
+                  <input
+                    ref={settingsConfirmInputRef}
+                    className={`terminal-input ${settingsConfirmError ? 'error' : ''}`}
+                    value={settingsConfirmInput}
+                    onChange={e => {
+                      setSettingsConfirmInput(e.target.value);
+                      setSettingsConfirmError(false);
+                    }}
+                    onKeyDown={handleSettingsConfirmKeyDown}
+                    onFocus={() => setSettingsStep(SETTINGS_STEPS.length)}
+                    placeholder={settingsConfirmError ? "y or n" : ""}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="terminal-hint">↑/↓ or Tab/Shift+Tab to move between fields · Esc or Ctrl+C to cancel and return to the home window</div>
           </div>
         )}
       </div>

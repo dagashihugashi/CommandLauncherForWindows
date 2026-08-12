@@ -2,6 +2,8 @@
 :root {
   --wm-bg-rgba: rgba(0, 0, 0, 0.95);
   --wm-text-color: #dddddd;
+  --wm-label-color: #777777;
+  --wm-highlight-color: #ffffff;
   --wm-alert-color: #ff5c5c;
   --wm-success-color: rgba(6, 188, 94, 0.95);
   --wm-error-color: rgba(202, 68, 68, 0.95);
@@ -55,7 +57,7 @@ body {
 
 .search-prompt {
   font-size: 20px;
-  color: #777777;
+  color: var(--wm-label-color);
   white-space: nowrap;
   user-select: none;
 }
@@ -140,8 +142,8 @@ body {
 }
 
 .suggest-item.selected {
-  border-left-color: #ffffff;
-  color: #ffffff;
+  border-left-color: var(--wm-highlight-color);
+  color: var(--wm-highlight-color);
 }
 
 
@@ -168,6 +170,25 @@ body {
   /* 各要素の間の余白 */
   padding: 4px 0;
   box-sizing: border-box;
+  /* 先頭行(プロンプト)と末尾のヒントは常に固定表示にし、中間のwizard-scroll-areaだけをスクロールさせる */
+  flex: 1;
+  min-height: 0;
+}
+
+.wizard-scroll-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* スクロールバー自体は非表示にする（スクロール動作は維持） */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* 旧Edge/IE */
+}
+
+.wizard-scroll-area::-webkit-scrollbar {
+  display: none; /* Chromium系(WebView2)ではこちらが効く */
 }
 
 .terminal-line {
@@ -182,7 +203,7 @@ body {
 }
 
 .terminal-label {
-  color: #777777;
+  color: var(--wm-label-color);
   white-space: nowrap;
 }
 
