@@ -20,12 +20,14 @@ use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, STGM_READ,
 };
 use windows::Win32::UI::Shell::{
-    IShellLinkW, ShellLink, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW,
+    IShellLinkW, ShellExecuteW, ShellLink, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON,
+    SHGetFileInfoW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DestroyIcon, EnumWindows, GetClassLongPtrW, GetIconInfo, GetWindowTextLengthW,
     GetWindowTextW, IsIconic, IsWindowVisible, SendMessageTimeoutW, SetForegroundWindow,
-    ShowWindow, GCLP_HICON, HICON, ICONINFO, ICON_BIG, SMTO_ABORTIFHUNG, SW_RESTORE, WM_GETICON,
+    ShowWindow, GCLP_HICON, HICON, ICONINFO, ICON_BIG, SMTO_ABORTIFHUNG, SW_RESTORE,
+    SW_SHOWMAXIMIZED, WM_GETICON,
 };
 
 // Data structure
@@ -38,7 +40,9 @@ struct AppItem {
     #[serde(default)]
     icon: Option<String>,
     // クエリ検索（"g react"等）のキーワードとして使えるようにするかどうか
-    #[serde(default)]
+    // フロント側はcamelCase(queryMode)前提で読むため、JSON上のキー名もそれに合わせる。
+    // 過去にsnake_case(query_mode)で保存された既存のconfig.jsonも壊さないようaliasで両対応にする
+    #[serde(default, rename = "queryMode", alias = "query_mode")]
     query_mode: bool,
 }
 
@@ -218,6 +222,8 @@ fn icon_from_hwnd(hwnd: HWND) -> Option<String> {
     }
 }
 
+// コマンド関連(config.json)。設定(settings.json)とは別ファイルにして、
+// 登録コマンドが増えても設定側のファイルは肥大化しないようにする
 #[derive(Serialize, Deserialize, Default)]
 struct Config {
     #[serde(default)]
@@ -225,8 +231,6 @@ struct Config {
     // targetをキーに、起動回数と最終起動時刻(unix秒)を記録する（フリーセンシーによる並び替え用）
     #[serde(default)]
     usage: HashMap<String, UsageEntry>,
-    #[serde(default)]
-    settings: AppSettings,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -245,6 +249,12 @@ struct AppSettings {
     opacity: f64,
     #[serde(default = "default_text_color")]
     text_color: String,
+    // ラベル/プロンプト側（[WindowsManeuver]>やName:等）の文字色。text_colorとは別に変更できる
+    #[serde(default = "default_label_color")]
+    label_color: String,
+    // 検索候補を選択した時のハイライト（左端のラインと文字色）
+    #[serde(default = "default_highlight_color")]
+    highlight_color: String,
     #[serde(default = "default_alert_color")]
     alert_color: String,
     #[serde(default = "default_success_color")]
@@ -263,6 +273,12 @@ fn default_opacity() -> f64 {
 }
 fn default_text_color() -> String {
     "#dddddd".to_string()
+}
+fn default_label_color() -> String {
+    "#777777".to_string()
+}
+fn default_highlight_color() -> String {
+    "#ffffff".to_string()
 }
 fn default_alert_color() -> String {
     "#ff5c5c".to_string()
@@ -283,6 +299,8 @@ impl Default for AppSettings {
             background_color: default_background_color(),
             opacity: default_opacity(),
             text_color: default_text_color(),
+            label_color: default_label_color(),
+            highlight_color: default_highlight_color(),
             alert_color: default_alert_color(),
             success_color: default_success_color(),
             error_color: default_error_color(),
@@ -392,13 +410,24 @@ fn get_config_path() -> Result<PathBuf, String> {
     Ok(exe_dir.join("config.json"))
 }
 
+// exeと同じディレクトリのsettings.jsonを指す
+fn get_settings_path() -> Result<PathBuf, String> {
+    let exe_path = env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or_else(|| "Failed to resolve exe directory".to_string())?;
+    Ok(exe_dir.join("settings.json"))
+}
+
 #[tauri::command]
 fn load_config() -> Result<String, String> {
     let config_path = get_config_path()?;
-    match fs::read_to_string(&config_path) {
-        Ok(content) => Ok(content),
-        Err(e) => Err(format!("Load failed: {}", e)),
-    }
+    let raw = fs::read_to_string(&config_path).map_err(|e| format!("Load failed: {}", e))?;
+
+    // Config構造体を経由して返すことで、rename/aliasによるキー名の正規化
+    // （例: 過去のquery_mode -> queryMode）をフロントに渡す前に適用する
+    let config: Config = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    serde_json::to_string(&config).map_err(|e| e.to_string())
 }
 
 // 起動したアイテムの利用回数・最終利用時刻を記録する（検索結果のフリーセンシー並び替え用）
@@ -426,58 +455,91 @@ fn record_usage(target: String) -> Result<(), String> {
     Ok(())
 }
 
-// /settings で編集した内容を保存する
+// settings.jsonを読む。無ければ、まだ移行前の旧config.json内のsettingsキーが
+// 残っていないか確認し、見つかればそれをsettings.jsonへ書き出してから返す
+#[tauri::command]
+fn load_settings() -> Result<String, String> {
+    let settings_path = get_settings_path()?;
+
+    if let Ok(raw) = fs::read_to_string(&settings_path) {
+        let settings: AppSettings = serde_json::from_str(&raw).unwrap_or_default();
+        return serde_json::to_string(&settings).map_err(|e| e.to_string());
+    }
+
+    // settings.jsonがまだ無い場合、旧バージョンで config.json 内に同居していた
+    // settingsキーからの移行を試みる（無ければ既定値にフォールバック）
+    if let Ok(config_path) = get_config_path() {
+        if let Ok(raw) = fs::read_to_string(&config_path) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if let Some(legacy) = value.get("settings") {
+                    if let Ok(settings) = serde_json::from_value::<AppSettings>(legacy.clone()) {
+                        if let Ok(pretty) = serde_json::to_string_pretty(&settings) {
+                            let _ = fs::write(&settings_path, pretty);
+                        }
+                        return serde_json::to_string(&settings).map_err(|e| e.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&AppSettings::default()).map_err(|e| e.to_string())
+}
+
+// /settings で編集した内容をsettings.jsonへ保存する
 #[tauri::command]
 fn save_settings(settings: AppSettings) -> Result<(), String> {
-    let config_path = get_config_path()?;
-
-    let mut config: Config = match fs::read_to_string(&config_path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => Config::default(),
-    };
-
-    config.settings = settings;
-
-    let new_content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    fs::write(&config_path, new_content).map_err(|e| e.to_string())?;
-
+    let settings_path = get_settings_path()?;
+    let new_content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    fs::write(&settings_path, new_content).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-fn open_target(target : &str) -> Result<String, String> {
-    use std::process::Command;
-    use std::os::windows::process::CommandExt;
-    if target.starts_with("HWND:"){
-     let hwnd_str = &target[5..];
-     if let Ok(hwnd_val) = hwnd_str.parse::<usize>() {
-        unsafe {
-            let hwnd = HWND(hwnd_val as isize);
-            if IsIconic(hwnd).as_bool() {
-                ShowWindow(hwnd, SW_RESTORE);
+fn open_target(target: &str) -> Result<String, String> {
+    if target.starts_with("HWND:") {
+        let hwnd_str = &target[5..];
+        if let Ok(hwnd_val) = hwnd_str.parse::<usize>() {
+            unsafe {
+                let hwnd = HWND(hwnd_val as isize);
+                if IsIconic(hwnd).as_bool() {
+                    ShowWindow(hwnd, SW_RESTORE);
+                }
+                SetForegroundWindow(hwnd);
             }
-            SetForegroundWindow(hwnd);
+            return Ok(format!("Switched to window: {}", hwnd_str));
         }
-        return Ok(format!("Switched to window: {}", hwnd_str));
-     }   
     }
 
-    // Launch apps by powerShell in windows
-    let ps_command = format!(
-        "try {{ Start-Process '{}' -WindowStyle Maximized -ErrorAction Stop }} catch {{ exit 1 }}",
-        target
-    );
+    // アプリ/URLをシェル経由で直接開く。
+    // 以前はpowershell.exeを毎回新規起動してStart-Processしていたが、
+    // プロセス起動オーバーヘッドだけで実測300ms前後かかり体感の遅さの主因だったため、
+    // 同じプロセス内からWin32のShellExecuteWを直接呼ぶ方式にして高速化する
+    unsafe {
+        let com_init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &ps_command])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW（黒い画面を出さない）
-        .output()
-        .map_err(|e| e.to_string())?;
+        let target_wide: Vec<u16> = OsStr::new(target).encode_wide().chain(std::iter::once(0)).collect();
+        let operation_wide: Vec<u16> = OsStr::new("open").encode_wide().chain(std::iter::once(0)).collect();
 
-    if output.status.success() {
-        Ok(format!("Opened max: {}", target))
-    } else {
-        Err(format!("Failed to open: {}", target))
+        let result = ShellExecuteW(
+            HWND(0),
+            PCWSTR(operation_wide.as_ptr()),
+            PCWSTR(target_wide.as_ptr()),
+            PCWSTR(std::ptr::null()),
+            PCWSTR(std::ptr::null()),
+            SW_SHOWMAXIMIZED,
+        );
+
+        if com_init.is_ok() {
+            CoUninitialize();
+        }
+
+        // ShellExecuteWの戻り値は成功時32より大きい値、失敗時は32以下のエラーコード
+        if (result.0 as usize) > 32 {
+            Ok(format!("Opened: {}", target))
+        } else {
+            Err(format!("Failed to open (error code {}): {}", result.0 as usize, target))
+        }
     }
 }
 
@@ -628,6 +690,7 @@ pub fn run() {
             get_icon,
             record_usage,
             run_system_command,
+            load_settings,
             save_settings
             ])
         .run(tauri::generate_context!())
