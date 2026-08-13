@@ -13,6 +13,7 @@ interface AppItem {
   isCustom?: boolean;
   icon?: string;
   queryMode?: boolean; // このコマンド名をキーワードにしたクエリ検索(例: "g react")を許可するか
+  tags?: string[]; // "#tag"検索でグルーピングするためのタグ
 }
 
 const ADD_COMMAND: AppItem = {
@@ -131,10 +132,11 @@ const SLASH_COMMAND_ITEMS: AppItem[] = [
 ];
 
 // add/edit commandを会話形式で1問ずつ聞いていく際の質問リスト
-const ADD_COMMAND_STEPS: { key: 'name' | 'target' | 'description' | 'queryMode'; label: string; required: boolean; type: 'text' | 'yn' }[] = [
+const ADD_COMMAND_STEPS: { key: 'name' | 'target' | 'description' | 'tags' | 'queryMode'; label: string; required: boolean; type: 'text' | 'yn' }[] = [
   { key: 'name', label: 'Name', required: true, type: 'text' },
   { key: 'target', label: 'Target (URL or Path)', required: true, type: 'text' },
   { key: 'description', label: 'Description (optional)', required: false, type: 'text' },
+  { key: 'tags', label: 'Tags (comma-separated, optional)', required: false, type: 'text' },
   { key: 'queryMode', label: 'Enable query mode? (y/n)', required: false, type: 'yn' },
 ];
 
@@ -142,10 +144,42 @@ function App() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<AppItem[]>([]);
   const [appList, setAppList] = useState<AppItem[]>([]);
-  const [openWindows, setOpenWindows] = useState<AppItem[]>([]);
+  const [tagMode, setTagMode] = useState<string | null>(null); // "#work" のようなタグ内検索モードに入っているか（値はタグ名）
+  // appListが変わった時だけ再インデックスする（毎回のキー入力ごとに作り直すと、
+  // アプリ数が多い環境でタイプするたびに重くなるため）
+  const fuseIndex = React.useMemo(
+    () => new Fuse(appList, {
+      keys: ["name", "target"], // 名前だけでなく、URLやパス（target）も検索対象にする
+      threshold: 0.4, // 0.0(完全一致)～1.0(なんでもマッチ)
+    }),
+    [appList]
+  );
+  // 登録されている全タグと、タグごとのコマンド数（"#"サジェスト表示用）
+  const allTags = React.useMemo(() => {
+    const set = new Set<string>();
+    appList.forEach(app => (app.tags ?? []).forEach(t => set.add(t)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [appList]);
+  const tagCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    appList.forEach(app => (app.tags ?? []).forEach(t => { counts[t] = (counts[t] ?? 0) + 1; }));
+    return counts;
+  }, [appList]);
+  // タグ内検索モード中に対象となるコマンド一覧と、それ専用のFuseインデックス
+  const taggedApps = React.useMemo(
+    () => tagMode ? appList.filter(app => (app.tags ?? []).includes(tagMode)) : [],
+    [appList, tagMode]
+  );
+  const tagFuseIndex = React.useMemo(
+    () => new Fuse(taggedApps, {
+      keys: ["name", "target"],
+      threshold: 0.4,
+    }),
+    [taggedApps]
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [mode, setMode] = useState<'search' | 'add-command' | 'settings'>('search');
-  const [newApp, setNewApp] = useState({ name: '', target: '', description: '', queryMode: '' });
+  const [newApp, setNewApp] = useState({ name: '', target: '', description: '', tags: '', queryMode: '' });
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsDraft, setSettingsDraft] = useState<Record<keyof AppSettings, string>>({
     backgroundColor: '', opacity: '', textColor: '', labelColor: '', highlightColor: '', alertColor: '', successColor: '', errorColor: '', hotkey: ''
@@ -253,7 +287,7 @@ function App() {
   // add/edit commandの会話状態を初期化して検索画面に戻る（保存後・キャンセル共通）
   const resetCommandFlow = () => {
     setMode('search');
-    setNewApp({ name: '', target: '', description: '', queryMode: '' });
+    setNewApp({ name: '', target: '', description: '', tags: '', queryMode: '' });
     setEditingOldName(null);
     setCmdStep(0);
     setStepError(false);
@@ -419,8 +453,8 @@ function App() {
     if (target === "cmd:add") return <span className="badge badge-cmd">CMD</span>;
     if (target === "cmd:settings") return <span className="badge badge-cmd">CMD</span>;
     if (target.startsWith("cmd:slash:")) return <span className="badge badge-sys">SYS</span>;
+    if (target.startsWith("cmd:tag:")) return <span className="badge badge-cmd">TAG</span>;
     if (target.startsWith("http")) return <span className="badge badge-url">URL</span>;
-    if (target.startsWith("HWND:")) return <span className="badge badge-win">WIN</span>;
     return <span className="badge badge-app">APP</span>;  // アプリやコマンド
   };
 
@@ -462,30 +496,14 @@ function App() {
       return;
     }
 
-    let finalTarget = app.target;
-
-    if (finalTarget.startsWith("http")) {
-      const keyword = getUrlKeyword(finalTarget);
-      if (keyword) {
-        const matchingWindow = openWindows.find(w =>
-          w.name.toLowerCase().includes(keyword.toLowerCase())
-        );
-
-        if (matchingWindow) {
-          finalTarget = matchingWindow.target;
-        }
-      }
-    }
+    const finalTarget = app.target;
 
     try {
       await invoke("open_target", { target: finalTarget });
 
-      // HWND(開いているウィンドウ)はセッションごとに変わり次回以降マッチしないので記録しない
-      if (!app.target.startsWith("HWND:")) {
-        invoke("record_usage", { target: app.target }).catch(e =>
-          console.warn("Failed to record usage:", e)
-        );
-      }
+      invoke("record_usage", { target: app.target }).catch(e =>
+        console.warn("Failed to record usage:", e)
+      );
 
       // 成功したらウィンドウを隠してリセットする
       const appWindow = getCurrentWindow();
@@ -501,14 +519,6 @@ function App() {
 
   const fetchConfig = React.useCallback(async () => {
     try {
-      let windows: AppItem[] = [];
-      try {
-        windows = await invoke("get_open_windows");
-        setOpenWindows(windows);
-      } catch (e) {
-        console.warn("Failed to get windows:", e);
-      }
-
       let customApps: AppItem[] = [];
       try {
         const jsonString: string = await invoke("load_config");
@@ -538,7 +548,7 @@ function App() {
         console.warn("Failed to load config:", e);
       }
 
-      setAppList([...windows, ...customApps, ...scannedApps]);
+      setAppList([...customApps, ...scannedApps]);
     } catch (error) {
       console.error("Fetch error: ", error);
       showError("Failed to initialize launcher");
@@ -636,6 +646,9 @@ function App() {
         } else if (pendingSlashCommand) {
           // /shutdown, /restart の確認中も同様にモードだけ抜ける
           exitSlashCommand();
+        } else if (tagMode) {
+          // タグ内検索モード中も同様にモードだけ抜ける
+          exitTagMode();
         } else {
           // それ以外の通常検索では何もしない（＝そのまま上位に伝わってアプリが閉じる）
           await appWindow.hide();
@@ -647,7 +660,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleGlobalKeyDown);
     };
-  }, [mode, queryEngine, pendingSlashCommand]);
+  }, [mode, queryEngine, pendingSlashCommand, tagMode]);
 
   // 入力された最初の単語が、{query}プレースホルダーを持つクエリ検索のキーワードかどうかを調べる
   // （登録したカスタムコマンドを優先し、無ければDEFAULT_QUERY_ENGINESにフォールバック）
@@ -666,6 +679,46 @@ function App() {
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
+
+    // タグ内検索モード中は、"/"やクエリ検索のトリガーを無視して、
+    // そのタグを持つコマンドだけを対象にあいまい検索する
+    if (tagMode) {
+      setQuery(value);
+      setSelectedIndex(0);
+      if (value) {
+        setResults(tagFuseIndex.search(value).map(res => res.item));
+      } else {
+        // 空欄ならそのタグの全コマンドを一覧表示
+        setResults(taggedApps);
+      }
+      return;
+    }
+
+    // "#" で始めたら、タグ名のサジェスト、または "#tag "でタグ内検索モードへの遷移
+    if (value.startsWith('#')) {
+      const spaceIndex = value.indexOf(' ');
+      if (spaceIndex > 0) {
+        const tagCandidate = value.slice(1, spaceIndex);
+        const matchedTag = allTags.find(t => t.toLowerCase() === tagCandidate.toLowerCase());
+        if (matchedTag) {
+          enterTagMode(matchedTag, value.slice(spaceIndex + 1));
+          return;
+        }
+      }
+
+      setQuery(value);
+      setSelectedIndex(0);
+      const partial = value.slice(1).toLowerCase();
+      const tagItems: AppItem[] = allTags
+        .filter(t => t.toLowerCase().includes(partial))
+        .map(t => ({
+          name: `#${t}`,
+          target: `cmd:tag:${t}`,
+          description: `${tagCounts[t]} command(s)`,
+        }));
+      setResults(tagItems);
+      return;
+    }
 
     // "/" で始めたら専用の名前空間として、システムコマンドだけを候補に出す
     if (value.startsWith('/')) {
@@ -696,28 +749,14 @@ function App() {
     setSelectedIndex(0); // 検索文字が変わったら選択位置を一番上に戻す
 
     if (value) {
-      const fuse = new Fuse(appList, {
-        keys: ["name", "target"], // 名前だけでなく、URLやパス（target）も検索対象にする
-        threshold: 0.4, // 0.0(完全一致)～1.0(なんでもマッチ)
-      });
-
       // Search
-      const fuseResult = fuse.search(value);
+      const fuseResult = fuseIndex.search(value);
       // Set item
       const filteredResult = fuseResult.map(res => res.item);
 
       filteredResult.sort((a, b) => {
-        const isAHwnd = a.target.startsWith("HWND:");
-        const isBHwnd = b.target.startsWith("HWND:");
-
-        if (isAHwnd && !isBHwnd) return -1; // aがHWNDなら前にする
-        if (!isAHwnd && isBHwnd) return 1;  // bがHWNDなら前にする
-
         // よく使う/最近使ったものを優先する（使用履歴がなければ0点でFuse.jsの順位のまま）
-        const scoreDiff = usageScore(b.target) - usageScore(a.target);
-        if (scoreDiff !== 0) return scoreDiff;
-
-        return 0; // 両方HWND、あるいは両方違う場合は、Fuse.jsの元の順位（スコア）を維持
+        return usageScore(b.target) - usageScore(a.target);
       });
 
       // Merge "add command"
@@ -729,7 +768,6 @@ function App() {
     } else {
       setResults([]);
     }
-    console.log(appList);
   };
 
   // クエリ検索モード中に元のキーワード入力に戻る（Backspace/Escでの離脱と共通）
@@ -737,6 +775,29 @@ function App() {
     setQuery(queryEngine?.keyword ?? '');
     setQueryEngine(null);
     setQueryArg('');
+  };
+
+  // タグ内検索モードへ入る。initialQueryがあれば("#tag something"のように一度に打った場合)
+  // それで即座に絞り込んだ状態から始める
+  const enterTagMode = (tagName: string, initialQuery: string = '') => {
+    setTagMode(tagName);
+    setQuery(initialQuery);
+    setSelectedIndex(0);
+    const scoped = appList.filter(app => (app.tags ?? []).includes(tagName));
+    if (initialQuery) {
+      const fuse = new Fuse(scoped, { keys: ["name", "target"], threshold: 0.4 });
+      setResults(fuse.search(initialQuery).map(res => res.item));
+    } else {
+      setResults(scoped);
+    }
+  };
+
+  // タグ内検索モードから通常検索に戻る（Backspace/Escでの離脱と共通）
+  const exitTagMode = () => {
+    setTagMode(null);
+    setQuery('');
+    setResults([]);
+    setSelectedIndex(0);
   };
 
   const handleQueryArgChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -816,8 +877,21 @@ function App() {
 
   // ▼ Enterキーと、上下キーの処理を統合
   const handleExecute = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && tagMode && query === '') {
+      // タグ内検索モードで入力欄が空の状態でさらにBackspace：通常検索に戻る
+      e.preventDefault();
+      exitTagMode();
+      return;
+    }
+
     if (e.key === "Enter") {
       const selectedItem = results[selectedIndex] || { name: query, target: query };
+
+      // #tag : サジェストから選んだタグでタグ内検索モードへ
+      if (selectedItem.target.startsWith("cmd:tag:")) {
+        enterTagMode(selectedItem.target.slice("cmd:tag:".length));
+        return;
+      }
 
       // /settings : サジェストから選んでいてもタイプし切っていても設定画面へ
       if (selectedItem.target === "cmd:settings" || query.trim().toLowerCase() === "/settings") {
@@ -837,8 +911,8 @@ function App() {
         return;
       }
 
-      // in-line math: 数式っぽければ計算して検索窓の中身を結果に置き換える
-      if (looksLikeMathExpression(query)) {
+      // in-line math: 数式っぽければ計算して検索窓の中身を結果に置き換える（タグ内検索モードでは行わない）
+      if (!tagMode && looksLikeMathExpression(query)) {
         const rawResult = evaluateMathExpression(query);
         if (rawResult === null) {
           showError("Invalid expression");
@@ -904,6 +978,10 @@ function App() {
     }
 
     const queryModeEnabled = /^y/i.test(newApp.queryMode.trim());
+    // カンマ区切りの入力をトリム・空要素除去・重複除去して配列化する
+    const tagsArray = Array.from(new Set(
+      newApp.tags.split(',').map(t => t.trim()).filter(Boolean)
+    ));
 
     try {
       if (editingOldName) {
@@ -914,13 +992,14 @@ function App() {
           newName: newApp.name,
           newTarget: newApp.target,
           newDescription: newApp.description || null,
-          newQueryMode: queryModeEnabled
+          newQueryMode: queryModeEnabled,
+          newTags: tagsArray
         });
 
         // リストの該当箇所だけを新しいデータに置き換える
         setAppList(prev => prev.map(item =>
           item.name === editingOldName
-            ? { name: newApp.name, target: newApp.target, description: newApp.description, isCustom: true, queryMode: queryModeEnabled }
+            ? { name: newApp.name, target: newApp.target, description: newApp.description, isCustom: true, queryMode: queryModeEnabled, tags: tagsArray }
             : item
         ));
       } else {
@@ -929,9 +1008,10 @@ function App() {
           name: newApp.name,
           target: newApp.target,
           description: newApp.description || null,
-          queryMode: queryModeEnabled
+          queryMode: queryModeEnabled,
+          tags: tagsArray
         });
-        setAppList(prev => [...prev, { name: newApp.name, target: newApp.target, description: newApp.description, isCustom: true, queryMode: queryModeEnabled }]);
+        setAppList(prev => [...prev, { name: newApp.name, target: newApp.target, description: newApp.description, isCustom: true, queryMode: queryModeEnabled, tags: tagsArray }]);
       }
 
       showSuccess(editingOldName ? "Command edited!" : "Command added!");
@@ -1016,6 +1096,7 @@ function App() {
       name: appToEdit.name,
       target: appToEdit.target,
       description: appToEdit.description || '',
+      tags: (appToEdit.tags ?? []).join(', '),
       queryMode: appToEdit.queryMode ? 'y' : ''
     });
 
@@ -1074,6 +1155,24 @@ function App() {
                   />
                 </div>
               </div>
+            ) : tagMode ? (
+              <div className="search-bar-stack">
+                <div className="search-bar-line">
+                  <span className="search-prompt">[WindowsManeuver]&gt;</span>
+                  <span className="search-history-text">#{tagMode}</span>
+                </div>
+                <div className="search-bar-line">
+                  <span className="search-prompt">[#{tagMode}]&gt;</span>
+                  <input
+                    className="search-input"
+                    type="text"
+                    autoFocus
+                    value={query}
+                    onChange={handleSearch}
+                    onKeyDown={handleExecute}
+                  />
+                </div>
+              </div>
             ) : (
               <div className="search-bar-stack">
                 <div className="search-bar-line">
@@ -1092,7 +1191,9 @@ function App() {
             )}
 
             {queryEngine || pendingSlashCommand ? null : query && results.length === 0 ? (
-              <div className="empty-state">No matches for "{query}" — press Enter to try it as a command</div>
+              <div className="empty-state">
+                {tagMode ? `No matches for "${query}" in #${tagMode}` : `No matches for "${query}" — press Enter to try it as a command`}
+              </div>
             ) : results.length > 0 && (
               <ul className="suggest-list" ref={listRef}>
                 {results.slice(0, 20).map((app, index) => {

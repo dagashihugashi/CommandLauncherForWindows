@@ -340,12 +340,6 @@ body {
   border: 1px solid #444444;
 }
 
-.badge-win {
-  background-color: #474646; /* APPより一段階明るいグレー */
-  color: #25ed06;
-  border: 1px solid #25ed06;
-}
-
 .badge-sys {
   background-color: #3a2a1a;
   color: #ffa64d; /* 電源操作なので警戒色寄りに */
