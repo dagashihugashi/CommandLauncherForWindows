@@ -1,6 +1,6 @@
 # Windows Maneuver
 
-A fast, keyboard-driven, terminal-styled application launcher for Windows, built with Tauri + React. Press a hotkey, start typing, and launch apps, switch windows, search the web, do quick math, or run system commands — all without leaving the keyboard.
+A fast, keyboard-driven, terminal-styled application launcher for Windows, built with Tauri + React. Press a hotkey, start typing, and launch apps, search the web, do quick math, or run system commands — all without leaving the keyboard.
 
 ## Installation
 
@@ -19,14 +19,13 @@ Press **Alt+Space** (the default hotkey — see [Settings](#settings)) to open t
 
 ## Features
 
-### App & window search
+### App search
 
 Type to fuzzy-search:
 - Apps found in your Start Menu
-- Currently open windows (selecting one switches to it instead of opening a new instance)
 - Your custom commands (see below)
 
-**How results are ranked:** matches are found with fuzzy search over each item's name and path, then reordered — open windows are always shown first, then everything else is sorted by how often and how recently you've launched it (so things you use a lot naturally rise to the top over time), falling back to plain match relevance for anything you haven't used before.
+**How results are ranked:** matches are found with fuzzy search over each item's name and path, then reordered by how often and how recently you've launched it (so things you use a lot naturally rise to the top over time), falling back to plain match relevance for anything you haven't used before.
 
 Matching apps show their real icon (shortcut arrows are resolved away so you get the clean app icon). Icons are only fetched for the results actually shown on screen, so the search stays fast even with a large Start Menu.
 
@@ -39,9 +38,21 @@ Type `add command` and press Enter (or select it from the results) to open the c
 1. **Name** — the keyword you'll type to find/launch it (must be unique)
 2. **Target** — a URL or a local file/app path
 3. **Description** — optional
-4. **Enable query mode?** — see [Query search](#query-search) below
+4. **Tags** — optional, comma-separated (e.g. `work, docs`) — see [Tag search](#tag-search) below
+5. **Enable query mode?** — see [Query search](#query-search) below
 
 Confirm with `y` to save. Existing commands can be edited or deleted from the search results list (hover over a custom command to reveal the `edit` / `delete` buttons).
+
+### Tag search
+
+Group related commands under tags so you don't have to remember each command's exact name — just its tag. Type `#` to see every tag you've used so far, narrow it down by typing more (e.g. `#wo` → `#work`), then add a space to drop into a tag-scoped search:
+
+```
+[WindowsManeuver]> #work
+[#work]> docs
+```
+
+While in this mode, only commands carrying that tag are searched (same fuzzy matching and frecency ranking as normal search). Press Enter to launch, or Backspace on an empty line / Escape to back out to normal search. A command can have multiple tags, so the same command can show up under more than one group.
 
 ### Query search
 
@@ -109,9 +120,9 @@ Settings are stored separately from your commands (`settings.json` vs. `config.j
 | Tab | Autocomplete the top/selected result (search); press again to cycle candidates. Moves to the next field in Settings |
 | Shift+Tab | Moves to the previous field in Settings |
 | Enter | Launch selected result / confirm current step |
-| Escape | Hide the launcher (from the top-level search), or back out one level from query search, a `/` command confirmation, Add/Edit Command, or Settings |
+| Escape | Hide the launcher (from the top-level search), or back out one level from query search, tag search, a `/` command confirmation, Add/Edit Command, or Settings |
 | Ctrl+C | Same as Escape for backing out of a sub-screen |
-| Backspace (on an empty sub-input) | Step back to the previous line (query search / `/` command confirmation) |
+| Backspace (on an empty sub-input) | Step back to the previous line (query search / tag search / `/` command confirmation) |
 
 ## Development
 

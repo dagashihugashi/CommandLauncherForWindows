@@ -8,8 +8,9 @@ use std::fs;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::Manager;
 use windows::core::{ComInterface, PCWSTR};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC,
     SelectObject, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
@@ -24,10 +25,7 @@ use windows::Win32::UI::Shell::{
     SHGetFileInfoW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyIcon, EnumWindows, GetClassLongPtrW, GetIconInfo, GetWindowTextLengthW,
-    GetWindowTextW, IsIconic, IsWindowVisible, SendMessageTimeoutW, SetForegroundWindow,
-    ShowWindow, GCLP_HICON, HICON, ICONINFO, ICON_BIG, SMTO_ABORTIFHUNG, SW_RESTORE,
-    SW_SHOWMAXIMIZED, WM_GETICON,
+    DestroyIcon, GetIconInfo, HICON, ICONINFO, SW_SHOWMAXIMIZED,
 };
 
 // Data structure
@@ -44,10 +42,12 @@ struct AppItem {
     // 過去にsnake_case(query_mode)で保存された既存のconfig.jsonも壊さないようaliasで両対応にする
     #[serde(default, rename = "queryMode", alias = "query_mode")]
     query_mode: bool,
+    // コマンドをグルーピングするためのタグ("#tag"検索用)。カスタムコマンド以外は常に空
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 // HICONの中身をピクセルデータとして読み出し、PNGのdata URIに変換する
-// （scan_appsとget_open_windows双方から使う共通ロジック）
 fn hicon_to_data_uri(hicon: HICON) -> Option<String> {
     if hicon.0 == 0 {
         return None;
@@ -193,35 +193,6 @@ fn icon_from_path(path: &str) -> Option<String> {
     }
 }
 
-// ウィンドウハンドルが持つアイコン（タスクバーに出ているものと同じ）を取得する
-fn icon_from_hwnd(hwnd: HWND) -> Option<String> {
-    unsafe {
-        // 相手のウィンドウが応答なし(ハング中)でも待ち続けないよう、
-        // SendMessageWではなくタイムアウト付きのSendMessageTimeoutWを使う
-        let mut result: usize = 0;
-        let replied = SendMessageTimeoutW(
-            hwnd,
-            WM_GETICON,
-            WPARAM(ICON_BIG as usize),
-            LPARAM(0),
-            SMTO_ABORTIFHUNG,
-            200, // ms
-            Some(&mut result),
-        )
-        .0 != 0;
-
-        let mut hicon = if replied { result as isize } else { 0 };
-        if hicon == 0 {
-            hicon = GetClassLongPtrW(hwnd, GCLP_HICON) as isize;
-        }
-        if hicon == 0 {
-            return None;
-        }
-        // ウィンドウ/クラスが所有するアイコンなのでDestroyIconはしない
-        hicon_to_data_uri(HICON(hicon))
-    }
-}
-
 // コマンド関連(config.json)。設定(settings.json)とは別ファイルにして、
 // 登録コマンドが増えても設定側のファイルは肥大化しないようにする
 #[derive(Serialize, Deserialize, Default)]
@@ -309,47 +280,9 @@ impl Default for AppSettings {
     }
 }
 
-unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL{
-    // 見えないウィンドウ（バックグラウンドプロセスなど）を除外
-    if IsWindowVisible(hwnd).as_bool() {
-        let length = GetWindowTextLengthW(hwnd);
-        if length > 0 {
-            let mut buffer = vec![0u16; (length + 1) as usize];
-            GetWindowTextW(hwnd, &mut buffer);
-            let title = String::from_utf16_lossy(&buffer).trim_end_matches('\0').to_string();
-            
-            // 余計なシステムウィンドウを除外
-            if !title.is_empty() && title != "Program Manager" {
-                let windows = &mut *(lparam.0 as *mut Vec<AppItem>);
-                windows.push(AppItem {
-                    name: format!("🪟 {}", title), // 識別しやすいように窓アイコンをつける
-                    target: format!("HWND:{}", hwnd.0 as usize), // ハンドル（ID）を保存
-                    description: None,
-                    icon: None, // アイコンは画面に表示された分だけget_iconで遅延取得する
-                    query_mode: false,
-                });
-            }
-        }
-    }
-    true.into()
-}
-
-#[tauri::command]
-fn get_open_windows() -> Result<Vec<AppItem>, String> {
-    let mut windows: Vec<AppItem> = Vec::new();
-    unsafe {
-        let _ = EnumWindows(Some(enum_window_proc), LPARAM(&mut windows as *mut _ as isize));
-    }
-    Ok(windows)
-}
-
 // 画面に実際に表示されているアイテムの分だけ、フロントから呼ばれてアイコンを取得する
 #[tauri::command]
 fn get_icon(target: String) -> Option<String> {
-    if let Some(hwnd_str) = target.strip_prefix("HWND:") {
-        let hwnd_val: isize = hwnd_str.parse().ok()?;
-        return icon_from_hwnd(HWND(hwnd_val));
-    }
     if target.starts_with("http") || target == "cmd:add" {
         return None;
     }
@@ -386,6 +319,7 @@ fn scan_apps() -> Result<Vec<AppItem>, String> {
                             description: None,
                             icon: None, // アイコンは画面に表示された分だけget_iconで遅延取得する
                             query_mode: false,
+                            tags: Vec::new(),
                         });
                     }
                 }
@@ -497,20 +431,6 @@ fn save_settings(settings: AppSettings) -> Result<(), String> {
 
 #[tauri::command]
 fn open_target(target: &str) -> Result<String, String> {
-    if target.starts_with("HWND:") {
-        let hwnd_str = &target[5..];
-        if let Ok(hwnd_val) = hwnd_str.parse::<usize>() {
-            unsafe {
-                let hwnd = HWND(hwnd_val as isize);
-                if IsIconic(hwnd).as_bool() {
-                    ShowWindow(hwnd, SW_RESTORE);
-                }
-                SetForegroundWindow(hwnd);
-            }
-            return Ok(format!("Switched to window: {}", hwnd_str));
-        }
-    }
-
     // アプリ/URLをシェル経由で直接開く。
     // 以前はpowershell.exeを毎回新規起動してStart-Processしていたが、
     // プロセス起動オーバーヘッドだけで実測300ms前後かかり体感の遅さの主因だったため、
@@ -599,6 +519,7 @@ fn save_command(
     target: String,
     description: Option<String>,
     query_mode: bool,
+    tags: Vec<String>,
 ) -> Result<(), String> {
     let config_path = get_config_path()?;
 
@@ -615,6 +536,7 @@ fn save_command(
         description,
         icon: None,
         query_mode,
+        tags,
     });
 
     // 整形されたJSON文字列に変換してファイルに書き込む
@@ -649,6 +571,7 @@ fn edit_command(
     new_target: String,
     new_description: Option<String>,
     new_query_mode: bool,
+    new_tags: Vec<String>,
 ) -> Result<(), String> {
     let config_path = get_config_path()?;
 
@@ -664,6 +587,7 @@ fn edit_command(
         app.target = new_target;
         app.description = new_description;
         app.query_mode = new_query_mode;
+        app.tags = new_tags;
     } else {
         return Err("編集対象のコマンドが見つかりません".to_string());
     }
@@ -675,15 +599,43 @@ fn edit_command(
     Ok(())
 }
 
+// 画面解像度に応じてウィンドウサイズを決める。
+// 固定値(600x400)は1920x1080基準ではちょうどよかったが、解像度が違うPC（会社PC等）では
+// 相対的に小さく/大きく見えてしまうため、プライマリモニターの論理サイズに対する比率で計算し直す
+fn resize_to_screen(window: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = window.primary_monitor() else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let physical = monitor.size();
+    let logical_width = physical.width as f64 / scale;
+    let logical_height = physical.height as f64 / scale;
+
+    // 600x400 が 1920x1080 に対して幅約31%・高さ約37%だったので、その比率をベースにする
+    // （極端に小さい/大きい画面でも使いやすい範囲に収まるようクランプする）
+    // 全体を1.2倍したいので、比率・クランプ範囲どちらにも1.2倍をかける（文字サイズはCSS側で固定px/remのため影響しない）
+    const SCALE_UP: f64 = 1.2;
+    let width = (logical_width * 0.31 * SCALE_UP).clamp(500.0 * SCALE_UP, 900.0 * SCALE_UP);
+    let height = (logical_height * 0.37 * SCALE_UP).clamp(350.0 * SCALE_UP, 650.0 * SCALE_UP);
+
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    let _ = window.center();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                resize_to_screen(&window);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![open_target,
             load_config,
             scan_apps,
-            get_open_windows,
             save_command,
             delete_command,
             edit_command,
