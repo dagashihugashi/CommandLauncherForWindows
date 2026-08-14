@@ -77,7 +77,7 @@ fn hicon_to_data_uri(hicon: HICON) -> Option<String> {
                     biHeight: -height, // 上下反転させず取得する
                     biPlanes: 1,
                     biBitCount: 32,
-                    biCompression: BI_RGB.0 as u32,
+                    biCompression: BI_RGB.0,
                     ..Default::default()
                 },
                 ..Default::default()

@@ -54,6 +54,16 @@ Group related commands under tags so you don't have to remember each command's e
 
 While in this mode, only commands carrying that tag are searched (same fuzzy matching and frecency ranking as normal search). Press Enter to launch, or Backspace on an empty line / Escape to back out to normal search. A command can have multiple tags, so the same command can show up under more than one group.
 
+If the command you land on inside a tag has [query mode](#query-search) enabled, typing its name followed by a space drops you into query search without losing the tag context — the prompt grows a third line:
+
+```
+[WindowsManeuver]> #work
+[#work]> docs
+[docsearch]> onboarding
+```
+
+Backspace/Escape step back one level at a time: out of query search first (back to the tag-scoped search), then out of the tag (back to normal search).
+
 ### Query search
 
 Turn any custom command into a site-search shortcut. Type its name followed by a space (e.g. `g react`), and the prompt switches to a dedicated query line where you type your search terms:
