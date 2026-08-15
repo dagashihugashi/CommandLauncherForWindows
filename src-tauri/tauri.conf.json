@@ -19,7 +19,8 @@
         "center": true,
         "decorations": false,
         "transparent": true,
-        "alwaysOnTop": true
+        "alwaysOnTop": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
