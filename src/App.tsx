@@ -664,10 +664,11 @@ function App() {
 
   // 入力された最初の単語が、{query}プレースホルダーを持つクエリ検索のキーワードかどうかを調べる
   // （登録したカスタムコマンドを優先し、無ければDEFAULT_QUERY_ENGINESにフォールバック）
-  const findQueryEngine = (keyword: string): QueryEngine | null => {
+  // scope: マッチ対象のコマンド一覧（省略時はappList全体。タグ内検索中はそのタグのコマンドだけに絞るため渡す）
+  const findQueryEngine = (keyword: string, scope: AppItem[] = appList): QueryEngine | null => {
     const lower = keyword.toLowerCase();
 
-    const customMatch = appList.find(app =>
+    const customMatch = scope.find(app =>
       app.isCustom && app.name.toLowerCase() === lower && (app.target.includes("{query}") || app.queryMode)
     );
     const urlTemplate = customMatch?.target ?? DEFAULT_QUERY_ENGINES[lower];
@@ -680,9 +681,25 @@ function App() {
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
 
-    // タグ内検索モード中は、"/"やクエリ検索のトリガーを無視して、
-    // そのタグを持つコマンドだけを対象にあいまい検索する
+    // タグ内検索モード中は、"/"のトリガーは無視しつつ、
+    // "キーワード + スペース"でそのタグ内のクエリ対応コマンドへならクエリモードへ遷移する。
+    // それ以外はそのタグを持つコマンドだけを対象にあいまい検索する
     if (tagMode) {
+      if (!queryEngine) {
+        const spaceIndex = value.indexOf(' ');
+        if (spaceIndex > 0) {
+          const engine = findQueryEngine(value.slice(0, spaceIndex), taggedApps);
+          if (engine) {
+            setQueryEngine(engine);
+            setQueryArg(value.slice(spaceIndex + 1));
+            setQuery(value);
+            setResults([]);
+            setSelectedIndex(0);
+            return;
+          }
+        }
+      }
+
       setQuery(value);
       setSelectedIndex(0);
       if (value) {
@@ -1117,8 +1134,14 @@ function App() {
           <>
             {queryEngine ? (
               <div className="search-bar-stack">
+                {tagMode && (
+                  <div className="search-bar-line">
+                    <span className="search-prompt">[WindowsManeuver]&gt;</span>
+                    <span className="search-history-text">#{tagMode}</span>
+                  </div>
+                )}
                 <div className="search-bar-line">
-                  <span className="search-prompt">[WindowsManeuver]&gt;</span>
+                  <span className="search-prompt">{tagMode ? `[#${tagMode}]>` : "[WindowsManeuver]>"}</span>
                   <span className="search-history-text">{queryEngine.keyword}</span>
                 </div>
                 <div className="search-bar-line">
