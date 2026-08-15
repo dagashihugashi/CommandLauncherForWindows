@@ -1135,16 +1135,16 @@ function App() {
             {queryEngine ? (
               <div className="search-bar-stack">
                 {tagMode && (
-                  <div className="search-bar-line">
+                  <div className="search-bar-line" data-tauri-drag-region>
                     <span className="search-prompt">[WindowsManeuver]&gt;</span>
                     <span className="search-history-text">#{tagMode}</span>
                   </div>
                 )}
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">{tagMode ? `[#${tagMode}]>` : "[WindowsManeuver]>"}</span>
                   <span className="search-history-text">{queryEngine.keyword}</span>
                 </div>
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">[{queryEngine.label}]&gt;</span>
                   <input
                     className="search-input"
@@ -1158,11 +1158,11 @@ function App() {
               </div>
             ) : pendingSlashCommand ? (
               <div className="search-bar-stack">
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">[WindowsManeuver]&gt;</span>
                   <span className="search-history-text">/{pendingSlashCommand}</span>
                 </div>
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">[Are you sure?]</span>
                   <span className="terminal-label">
                     {pendingSlashCommand === 'shutdown' ? 'Shut down this PC now' : 'Restart this PC now'} (y/n):
@@ -1180,11 +1180,11 @@ function App() {
               </div>
             ) : tagMode ? (
               <div className="search-bar-stack">
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">[WindowsManeuver]&gt;</span>
                   <span className="search-history-text">#{tagMode}</span>
                 </div>
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">[#{tagMode}]&gt;</span>
                   <input
                     className="search-input"
@@ -1198,7 +1198,7 @@ function App() {
               </div>
             ) : (
               <div className="search-bar-stack">
-                <div className="search-bar-line">
+                <div className="search-bar-line" data-tauri-drag-region>
                   <span className="search-prompt">[WindowsManeuver]&gt;</span>
                   <input
                     className="search-input"
@@ -1264,7 +1264,7 @@ function App() {
           </>
         ) : mode === 'add-command' ? (
           <div className="add-command-container">
-            <div className="terminal-line">
+            <div className="terminal-line" data-tauri-drag-region>
               <span className="search-prompt">[WindowsManeuver]&gt;</span> {editingOldName ? "edit command" : "add command"}
             </div>
 
@@ -1321,7 +1321,7 @@ function App() {
           </div>
         ) : (
           <div className="add-command-container">
-            <div className="terminal-line">
+            <div className="terminal-line" data-tauri-drag-region>
               <span className="search-prompt">[WindowsManeuver]&gt;</span> settings
             </div>
 
